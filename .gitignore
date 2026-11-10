@@ -1,0 +1,34 @@
+# ModelSim / Questa
+work/
+transcript
+*.wlf
+
+# Quartus Prime
+db/
+incremental_db/
+output_files/
+simulation/
+*.qws
+*.bak
+*.sft
+*.qdf
+
+# Xilinx Vivado
+*.jou
+*.log
+.Xil/
+*.runs/
+*.hw/
+*.ip_user_files/
+*.cache/
+*.gen/
+
+# GHDL
+*.o
+*.cf
+*.vcd
+
+# Divers OS
+.DS_Store
+Thumbs.db
+*.vscode/
