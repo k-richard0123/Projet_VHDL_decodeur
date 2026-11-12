@@ -84,3 +84,19 @@ end process;
 
 
 
+process(clk_mic)
+begin
+    if rising_edge(clk_mic) then
+        if sample_ready = '1' then
+            -- Détection de passage par zéro (du négatif/nul vers le positif)
+            if (pcm_output > SEUIL_ZERO) and (pcm_output_old <= SEUIL_ZERO) then
+                periode_mesuree <= compteur_periode;
+                compteur_periode <= (others => '0');
+            else
+                compteur_periode <= compteur_periode + 1;
+            end if;
+            pcm_output_old <= pcm_output;
+        end if;
+    end if;
+end process;
+
