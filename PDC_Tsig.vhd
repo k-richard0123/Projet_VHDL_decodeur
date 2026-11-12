@@ -1,102 +1,89 @@
---clk_100mhz : horloge système de référence de la carte (100 MHz).
-
---clk_mic : horloge d'échantillonnage fournie au micro PDM (~2,4 MHz).
-
---compteur_div : compteur permettant de diviser la fréquence 100 MHz pour obtenir clk_mic.
-
---data_pdm : flux de données 1 bit issu du microphone.
-
---somme_uns : accumulateur comptant le nombre de bits à 1 sur une fenêtre de décimation.
-
---compteur_decimation : compteur rythmant la taille de la fenêtre de décimation.
-
---DECIMATION_FACTOR : constante fixant le rapport de sous-échantillonnage (ex. 64 ou 128).
-
---pcm_output : échantillon audio multi-bits (PCM) converti.
-
---sample_ready : indicateur (flag) signalant qu'un nouvel échantillon PCM est disponible.
-
---compteur_periode : compteur mesurant le nombre de cycles d'échantillonnage entre deux fronts.
-
---SEUIL_ZERO : valeur de référence pour détecter le passage par zéro du signal.
-
---pcm_output_old : valeur de l'échantillon précédent, indispensable pour détecter le changement de signe.
-
---periode_mesuree : valeur finale de la période du signal sonore stockée après détection.
-
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.STD_LOGIC_ARITH.ALL;
-
-entity PDC_Tsig is
-    Port ( clk_100mhz : in STD_LOGIC;
-           data_pdm : in STD_LOGIC;
-           clk_mic : out STD_LOGIC;
-           pcm_output : out STD_LOGIC_VECTOR(15 downto 0);
-           sample_ready : out STD_LOGIC;
-           periode_mesuree : out STD_LOGIC_VECTOR(15 downto 0));
-end PDC_Tsig;
+use IEEE.NUMERIC_STD.ALL;
 
 
 
 
+entity pcm_converter is
+    Port (
+        clk_100mhz: in  STD_LOGIC; -- Horloge système 100 MHz
+        reset: in  STD_LOGIC; -- Reset synchrone
+        data_pdm: in  STD_LOGIC; -- Données PDM (broche H5)[cite: 25]
+        clk_mic: out STD_LOGIC; -- Horloge micro PDM (broche J5)[cite: 25]
+        lr_sel: out STD_LOGIC; -- Sélection canal L/R (broche F5)[cite: 25]
+        pcm_data: out STD_LOGIC_VECTOR(15 downto 0); -- Sortie PCM 16 bits
+        sample_val: out STD_LOGIC -- Signal à '1' un cycle lorsque PCM est prêt
+    );
+
+end pcm_converter;
 
 
-architecture Behavioral of PDC_Tsig is
+
+
+
+
+architecture Behavioral of pcm_converter is
+
+    signal compteur_div: integer range 0 to 20 := 0;
+    signal internal_clk_mic: std_logic := '0';
+    constant DECIMATION_FACTOR: integer := 64;
+    signal compteur_decimation: integer range 0 to DECIMATION_FACTOR - 1 := 0;
+    signal somme_uns: unsigned(15 downto 0) := (others => '0');
 
 begin
 
-process(clk_100mhz)
-begin
-    if rising_edge(clk_100mhz) then
-        if compteur_div = 20 then
-            clk_mic <= not clk_mic;
-            compteur_div <= (others => '0');
-        else
-            compteur_div <= compteur_div + 1;
-        end if;
-    end if;
-end process;
 
 
 
-
-
-
-process(clk_mic)
-begin
-    if rising_edge(clk_mic) then
-        if compteur_decimation=DECIMATION_FACTOR then
-            pcm_output <= somme_uns;
-            sample_ready <= '1';
-            somme_uns <= (others => '0');
-            compteur_decimation <= (others => '0');
-        else
-            if data_pdm = '1' then
-                somme_uns <= somme_uns + 1;
-            end if;
-            compteur_decimation <= compteur_decimation +1;
-            sample_ready <= '0';
-        end if;
-    end if;
-end process;
-
-
-
-
-process(clk_mic)
-begin
-    if rising_edge(clk_mic) then
-        if sample_ready = '1' then
-            -- Détection de passage par zéro (du négatif/nul vers le positif)
-            if (pcm_output > SEUIL_ZERO) and (pcm_output_old <= SEUIL_ZERO) then
-                periode_mesuree <= compteur_periode;
-                compteur_periode <= (others => '0');
+    p_clk_gen : process(clk_100mhz)
+    begin
+        if rising_edge(clk_100mhz) then
+            if reset = '1' then
+                compteur_div <= 0;
+                internal_clk_mic <= '0';
+            elsif compteur_div = 20 then -- 100 MHz / (2 * 21) ≈ 2.38 MHz
+                internal_clk_mic <= not internal_clk_mic;
+                compteur_div <= 0;
             else
-                compteur_periode <= compteur_periode + 1;
+                compteur_div <= compteur_div + 1;
             end if;
-            pcm_output_old <= pcm_output;
         end if;
-    end if;
-end process;
+    end process;
 
+
+
+
+    clk_mic <= internal_clk_mic;
+    lr_sel <= '0'; -- Fixe le canal (données sur front montant, voir datasheet[cite: 25])
+
+
+
+
+
+    p_decimation : process(internal_clk_mic)
+    begin
+        if rising_edge(internal_clk_mic) then
+            if reset = '1' then
+                compteur_decimation <= 0;
+                somme_uns <= (others => '0');
+                pcm_data <= (others => '0');
+                sample_val <= '0';
+            else
+                if compteur_decimation = DECIMATION_FACTOR - 1 then
+                    pcm_data <= std_logic_vector(somme_uns & "00"); -- Ajustement sur 16 bits
+                    somme_uns <= (others => '0');
+                    compteur_decimation <= 0;
+                    sample_val <= '1'; -- Impulsion d'un cycle d'horloge mic
+                else
+                    if data_pdm = '1' then
+                        somme_uns <= somme_uns + 1;
+                    end if;
+                    compteur_decimation <= compteur_decimation + 1;
+                    sample_val <= '0';
+                end if;
+            end if;
+        end if;
+    end process;
+
+end Behavioral;
