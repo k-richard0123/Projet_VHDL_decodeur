@@ -70,15 +70,16 @@ begin
                 pcm_data <= (others => '0');
                 sample_val <= '0';
             else
+                if data_pdm = '1' then
+                        somme_uns <= somme_uns + 1;
+                end if;
+
                 if compteur_decimation = DECIMATION_FACTOR - 1 then
                     pcm_data <= std_logic_vector(somme_uns & "00"); -- Ajustement sur 16 bits
                     somme_uns <= (others => '0');
                     compteur_decimation <= 0;
                     sample_val <= '1'; -- Impulsion d'un cycle d'horloge mic
                 else
-                    if data_pdm = '1' then
-                        somme_uns <= somme_uns + 1;
-                    end if;
                     compteur_decimation <= compteur_decimation + 1;
                     sample_val <= '0';
                 end if;
