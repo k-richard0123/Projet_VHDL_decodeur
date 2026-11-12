@@ -5,25 +5,25 @@ use IEEE.NUMERIC_STD.ALL;
 
 
 
-entity pcm_converter is
+entity PDC_sig16 is
     Port (
         clk_100mhz: in  STD_LOGIC; -- Horloge système 100 MHz
         reset: in  STD_LOGIC; -- Reset synchrone
-        data_pdm: in  STD_LOGIC; -- Données PDM (broche H5)[cite: 25]
-        clk_mic: out STD_LOGIC; -- Horloge micro PDM (broche J5)[cite: 25]
-        lr_sel: out STD_LOGIC; -- Sélection canal L/R (broche F5)[cite: 25]
+        data_pdm: in  STD_LOGIC; -- Données PDM
+        clk_mic: out STD_LOGIC; -- Horloge micro PDM
+        lr_sel: out STD_LOGIC; -- Sélection canal L/R
         pcm_data: out STD_LOGIC_VECTOR(15 downto 0); -- Sortie PCM 16 bits
         sample_val: out STD_LOGIC -- Signal à '1' un cycle lorsque PCM est prêt
     );
 
-end pcm_converter;
+end PDC_sig16;
 
 
 
 
 
 
-architecture Behavioral of pcm_converter is
+architecture Behavioral of PDC_sig16 is
 
     signal compteur_div: integer range 0 to 20 := 0;
     signal internal_clk_mic: std_logic := '0';
@@ -55,7 +55,7 @@ begin
 
 
     clk_mic <= internal_clk_mic;
-    lr_sel <= '0'; -- Fixe le canal (données sur front montant, voir datasheet[cite: 25])
+    lr_sel <= '0'; -- Fixe le canal à gauche pour cet exemple, peut être modifié selon les besoins)
 
 
 
