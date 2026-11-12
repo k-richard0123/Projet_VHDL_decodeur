@@ -25,4 +25,8 @@
 --periode_mesuree : valeur finale de la période du signal sonore stockée après détection.
 
 
-architecture Behavioral
+architecture Behavioral of PDC_Tsig is
+
+begin
+
+process()
