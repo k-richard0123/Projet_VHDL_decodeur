@@ -75,7 +75,7 @@ begin
                 end if;
 
                 if compteur_decimation = DECIMATION_FACTOR - 1 then
-                    pcm_data <= std_logic_vector(somme_uns & "00"); -- Ajustement sur 16 bits
+                    pcm_data <= std_logic_vector(somme_uns(13 downto 0) & "00"); -- Ajustement sur 16 bits
                     somme_uns <= (others => '0');
                     compteur_decimation <= 0;
                     sample_val <= '1'; -- Impulsion d'un cycle d'horloge mic

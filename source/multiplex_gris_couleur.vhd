@@ -7,6 +7,7 @@ use ieee.numeric_std.all;
 -- SUR 1 PIXEL
 entity multiplex_gris_couleur is
 Port ( sw1:in std_logic;
+       
         gris   : in std_logic_vector(7 downto 0); -- Luminance
         Cr   : in std_logic_vector(7 downto 0); -- Rouge (R-Y)
         Cb   : in std_logic_vector(7 downto 0); -- Bleu (B-Y)

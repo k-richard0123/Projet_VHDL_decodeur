@@ -63,7 +63,7 @@ begin
 
 --?????????
     addr_int <= clr_cnt when clr_actif = '1' else unsigned(wr_addr);
-    data_int <= (others => '0') when clr_actif = '1' else vram_data_in;
+    data_int <= (others => '1') when clr_actif = '1' else vram_data_in;
     we_int   <= '1' when clr_actif = '1' else
                  '1' when (wr_en = '1' and unsigned(wr_addr) < NB_PIXELS) else
                 '0';
