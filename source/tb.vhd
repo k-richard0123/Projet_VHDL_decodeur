@@ -1,87 +1,71 @@
-library IEEE;
-use IEEE.STD_LOGIC_1164.ALL;
-use IEEE.NUMERIC_STD.ALL;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
-entity tb_detec_sync is
--- L'entité d'un testbench est toujours vide
-end tb_detec_sync;
+entity tb_multiplex_gris_couleur is
+end tb_multiplex_gris_couleur;
 
-architecture Behavioral of tb_detec_sync is
+architecture behavior of tb_multiplex_gris_couleur is
 
-    -- Déclaration du composant à tester
-    component detec_sync
-        Port( 
-            clk  : in std_logic;        
-            raz  : in std_logic;        
-            T    : in std_logic_vector(11 downto 0);      
-            sync : out std_logic
-        );
-    end component;
+    -- Signaux d'entrée
+    signal sw1  : std_logic := '0';
+    signal gris : std_logic_vector(7 downto 0) := (others => '0');
+    signal Cr   : std_logic_vector(7 downto 0) := (others => '0');
+    signal Cb   : std_logic_vector(7 downto 0) := (others => '0');
 
-    -- Signaux internes pour relier au DUT (Device Under Test)
-    signal clk  : std_logic := '0';
-    signal raz  : std_logic := '1';
-    signal T    : std_logic_vector(11 downto 0) := (others => '0');
-    signal sync : std_logic;
-
-    -- Définition de la période d'horloge (ex: 1 MHz)
-    constant CLK_PERIOD : time := 1 us;
+    -- Signaux de sortie
+    signal Cr_out   : std_logic_vector(7 downto 0);
+    signal Cb_out   : std_logic_vector(7 downto 0);
+    signal gris_out : std_logic_vector(7 downto 0);
 
 begin
 
-    -- Instanciation du composant
-    uut: detec_sync Port map (
-        clk  => clk,
-        raz  => raz,
-        T    => T,
-        sync => sync
-    );
+    -- Instanciation du composant (Device Under Test)
+    uut: entity work.multiplex_gris_couleur
+        port map (
+            sw1      => sw1,
+            gris     => gris,
+            Cr       => Cr,
+            Cb       => Cb,
+            Cr_out   => Cr_out,
+            Cb_out   => Cb_out,
+            gris_out => gris_out
+        );
 
-    -- Génération de l'horloge
-    clk_process :process
-    begin
-        clk <= '0';
-        wait for CLK_PERIOD/2;
-        clk <= '1';
-        wait for CLK_PERIOD/2;
-    end process;
-
-    -- Processus de stimulus pour tester différentes valeurs de T
+    -- Processus de stimulus pour tester toutes les conditions
     stim_proc: process
     begin
-        -- 1. Maintien du Reset au démarrage
-        raz <= '1';
-        T   <= std_logic_vector(to_unsigned(0, 12));
-        wait for 10 * CLK_PERIOD;
-        
-        -- Relâchement du reset
-        raz <= '0';
-        wait for 5 * CLK_PERIOD;
+        -- Test 1 : sw1 = '0' (Mode Noir et Blanc)
+        -- Attendu : gris_out = x"AA", Cr_out = x"00", Cb_out = x"00"
+        sw1  <= '0';
+        gris <= x"AA";
+        Cr   <= x"BB";
+        Cb   <= x"CC";
+        wait for 20 ns;
 
-        -- 2. Test d'une valeur en dessous de la plage (< 800)
-        -- ex: 500 us (2000 Hz) -> sync doit rester à '0'
-        T <= std_logic_vector(to_unsigned(500, 12));
-        wait for 5 * CLK_PERIOD;
+        -- Test 2 : sw1 = '1' (Mode Couleur)
+        -- Attendu : gris_out = x"AA", Cr_out = x"BB", Cb_out = x"CC"
+        sw1  <= '1';
+        wait for 20 ns;
 
-        -- 3. Test d'une valeur DANS la plage (800 <= T <= 870)
-        -- ex: 833 us (~1200 Hz) -> sync doit passer à '1'
-        T <= std_logic_vector(to_unsigned(833, 12));
-        wait for 5 * CLK_PERIOD;
+        -- Test 3 : Changement dynamique des signaux pendant sw1 = '1'
+        -- Attendu : Les sorties suivent immédiatement les nouvelles entrées
+        gris <= x"11";
+        Cr   <= x"22";
+        Cb   <= x"33";
+        wait for 20 ns;
 
-        -- 4. Test d'une valeur au dessus de la plage (> 870)
-        -- ex: 1000 us (1000 Hz) -> sync doit repasser à '0'
-        T <= std_logic_vector(to_unsigned(1000, 12));
-        wait for 5 * CLK_PERIOD;
-        
-        -- 5. Test des valeurs limites
-        T <= std_logic_vector(to_unsigned(800, 12));
-        wait for 5 * CLK_PERIOD;
-        
-        T <= std_logic_vector(to_unsigned(870, 12));
-        wait for 5 * CLK_PERIOD;
+        -- Test 4 : Retour à sw1 = '0' avec changement du gris
+        -- Attendu : gris_out suit la nouvelle valeur, Cr_out et Cb_out retombent à 0
+        sw1  <= '0';
+        gris <= x"FF";
+        Cr   <= x"44";
+        Cb   <= x"55";
+        wait for 20 ns;
 
-        -- Fin de simulation
+        -- Fin de la simulation
+        assert false report "Simulation terminée avec succès." severity note;
         wait;
     end process;
 
-end Behavioral;
+end behavior;

@@ -79,12 +79,19 @@ begin
                  if(clk'event and clk='1') then
                     
                  
-                    if ((cnt= 900000 - marge_compteur) and sig_sync='1') then 
+                    if ( sig_sync='1') then 
+                        
+                        cnt<=cnt+1;
+                        
+                        if(cnt= 900000 - marge_compteur) then
                             sync_val<='1';
-                            cnt<=cnt+1;
+                            cnt<= (others => '0');
                     else
+                    
                         sync_val<='0';
                         cnt<= (others => '0');
+                        
+                        end if;
                     end if;
                  end if;
    end if;
