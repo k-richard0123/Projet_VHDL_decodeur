@@ -26,6 +26,7 @@ architecture sim of tb_chaine_gris is
     constant DEBUT_LIGNE : real := 0.005;      -- 5 ms de 1500 Hz avant la 1re synchro
     constant AMPLITUDE   : real := 0.5;        -- amplitude du son (pleine echelle = 1)
     constant TROU_US     : integer := 500;
+    constant HYST_512    : std_logic_vector(14 downto 0) := std_logic_vector(to_unsigned(512, 15));
 
     signal clk        : std_logic := '0';
     signal rst        : std_logic := '1';
@@ -104,12 +105,12 @@ begin
     ----------------------------------------------------------------------------
     u_mic : entity work.PDC_sig16
         port map ( clk_100mhz => clk, reset => rst, data_pdm => data_pdm,
-                   clk_mic => clk_mic, lr_sel => open,
+                   front_ech => '0', clk_mic => clk_mic, lr_sel => open,
                    pcm_data => pcm, sample_val => open );
 
     u_per : entity work.perio_metre
-        generic map ( HYST => 512 )
-        port map ( clk => clk, raz => rst, tick_1us => tick_1us,
+        port map ( clk => clk, hyst => HYST_512,
+                   raz => rst, tick_1us => tick_1us,
                    sig_in => pcm, T => periode, T_val => open );
 
     u_sync : entity work.detec_sync

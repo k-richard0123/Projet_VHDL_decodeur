@@ -37,10 +37,8 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
 entity perio_metre is
-    generic (
-        HYST : integer := 512        -- demi-largeur de la bande d'hysteresis (unites PCM)
-    );
     Port ( clk      : in  std_logic;                       -- 100 MHz
+           hyst     : in  std_logic_vector(14 downto 0);   -- demi-largeur de la bande d'hysteresis (unites PCM, > 0)
            raz      : in  std_logic;                       -- reset synchrone, actif a '1'
            tick_1us : in  std_logic;                       -- '1' un cycle toutes les 1 us
            sig_in   : in  std_logic_vector(15 downto 0);   -- signal audio SIGNE centre sur 0
@@ -51,7 +49,7 @@ end perio_metre;
 
 architecture Behavioral of perio_metre is
 
-    constant hyst_s  : signed(15 downto 0) := to_signed(HYST, 16);
+    signal   hyst_s  : signed(15 downto 0);
     constant CNT_MAX : unsigned(9 downto 0) := (others => '1');      -- 1023 us : saturation
 
     signal cnt       : unsigned(9 downto 0) := (others => '0');  -- nb de us comptes sur la 1/2 periode
@@ -59,6 +57,8 @@ architecture Behavioral of perio_metre is
     signal sig_audio : signed(15 downto 0) := (others => '0');
 
 begin
+
+    hyst_s <= signed('0' & hyst);   -- toujours positif
 
 process(clk)
     begin

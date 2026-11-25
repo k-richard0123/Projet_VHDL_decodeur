@@ -29,7 +29,15 @@ entity top_sstv is
         vga_vsync  : out std_logic;
         vga_R      : out std_logic_vector(3 downto 0);
         vga_G      : out std_logic_vector(3 downto 0);
-        vga_B      : out std_logic_vector(3 downto 0)
+        vga_B      : out std_logic_vector(3 downto 0);
+
+        -- Debug (voir debug_carte.vhd)
+        sw_hyst    : in  std_logic_vector(1 downto 0);  -- SW1..0 : seuil d'hysteresis 00:512 01:256 10:128 11:1024
+        sw_front   : in  std_logic;                     -- SW2  : front de lecture du micro (0 = normal)
+        sw_libre   : in  std_logic;                     -- SW15 : mode libre (ignore la synchro, une ligne / 150 ms)
+        led        : out std_logic_vector(15 downto 0);
+        seg        : out std_logic_vector(6 downto 0);
+        an         : out std_logic_vector(7 downto 0)
     );
 end top_sstv;
 
@@ -60,6 +68,14 @@ architecture Structural of top_sstv is
     signal y_coord    : unsigned(7 downto 0) := (others => '0');  -- 0 a 239
     signal vram_waddr : std_logic_vector(16 downto 0);
 
+    -- debug
+    signal sw_s1, sw_s2  : std_logic_vector(3 downto 0) := (others => '0');  -- interrupteurs synchronises
+    signal hyst          : std_logic_vector(14 downto 0);
+    signal sync_1200     : std_logic;
+    signal sync_ligne    : std_logic;                       -- synchro donnee a luminance
+    signal cpt_libre     : integer range 0 to 14999999 := 0;
+    signal sync_libre    : std_logic := '0';
+
 begin
 
     ----------------------------------------------------------------------------
@@ -77,6 +93,40 @@ begin
     end process;
 
     clear_pulse <= clr_s2 and not clr_d;      -- 1 seul cycle par appui
+
+    ----------------------------------------------------------------------------
+    -- Interrupteurs de debug (synchronises)
+    ----------------------------------------------------------------------------
+    p_sw : process(clk_100mhz)
+    begin
+        if rising_edge(clk_100mhz) then
+            sw_s1 <= sw_libre & sw_front & sw_hyst;
+            sw_s2 <= sw_s1;
+        end if;
+    end process;
+
+    with sw_s2(1 downto 0) select hyst <=
+        std_logic_vector(to_unsigned(512, 15))  when "00",
+        std_logic_vector(to_unsigned(256, 15))  when "01",
+        std_logic_vector(to_unsigned(128, 15))  when "10",
+        std_logic_vector(to_unsigned(1024, 15)) when others;
+
+    -- Mode libre : une fausse synchro toutes les 150 ms (duree d'une ligne).
+    -- Permet de voir si le son est transforme en gris meme sans synchro detectee.
+    p_libre : process(clk_100mhz)
+    begin
+        if rising_edge(clk_100mhz) then
+            sync_libre <= '0';
+            if cpt_libre = 14999999 then
+                cpt_libre  <= 0;
+                sync_libre <= '1';
+            else
+                cpt_libre <= cpt_libre + 1;
+            end if;
+        end if;
+    end process;
+
+    sync_ligne <= sync_libre when sw_s2(3) = '1' else sync_valid;
 
     ----------------------------------------------------------------------------
     -- tick_1us : '1' un cycle sur 100
@@ -101,6 +151,7 @@ begin
             clk_100mhz => clk_100mhz,
             reset      => rst,
             data_pdm   => data_pdm,
+            front_ech  => sw_s2(2),
             clk_mic    => clk_mic,
             lr_sel     => lr_sel,
             pcm_data   => pcm_audio,
@@ -108,9 +159,9 @@ begin
         );
 
     inst_freq : entity work.perio_metre
-        generic map ( HYST => 512 )
         port map (
             clk      => clk_100mhz,
+            hyst     => hyst,
             raz      => rst,
             tick_1us => tick_1us,
             sig_in   => pcm_audio,
@@ -125,7 +176,7 @@ begin
             raz      => rst,
             tick_1us => tick_1us,
             T        => periode_us,
-            sync     => open,
+            sync     => sync_1200,
             sync_val => sync_valid      -- 1 cycle, a la fin de la synchro (+TROU_US)
         );
 
@@ -134,7 +185,7 @@ begin
         port map (
             clk      => clk_100mhz,
             raz      => rst,
-            sync_val => sync_valid,
+            sync_val => sync_ligne,     -- vraie synchro, ou fausse en mode libre
             T        => periode_us,     -- les 12 bits (avant : 10 bits -> repliement)
             data_out => pixel_gris,
             x_out    => pixel_x,
@@ -183,6 +234,25 @@ begin
             VGA_R        => vga_R,
             VGA_G        => vga_G,
             VGA_B        => vga_B
+        );
+
+    ----------------------------------------------------------------------------
+    -- Debug : LED + 7 segments
+    ----------------------------------------------------------------------------
+    inst_debug : entity work.debug_carte
+        port map (
+            clk      => clk_100mhz,
+            rst      => rst,
+            tick_1us => tick_1us,
+            pcm      => pcm_audio,
+            T        => periode_us,
+            sync     => sync_1200,
+            sync_val => sync_valid,
+            pix_we   => pixel_we,
+            ligne    => std_logic_vector(y_coord),
+            led      => led,
+            seg      => seg,
+            an       => an
         );
 
 end Structural;

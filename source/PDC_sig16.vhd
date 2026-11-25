@@ -26,6 +26,8 @@ entity PDC_sig16 is
         clk_100mhz : in  std_logic;                      -- horloge systeme 100 MHz
         reset      : in  std_logic;                      -- reset synchrone, actif a '1'
         data_pdm   : in  std_logic;                      -- donnees PDM du micro (asynchrone)
+        front_ech  : in  std_logic;                      -- '0' : lecture juste avant le front MONTANT de clk_mic
+                                                         -- '1' : lecture juste avant le front DESCENDANT (debug)
         clk_mic    : out std_logic;                      -- horloge vers le micro
         lr_sel     : out std_logic;                      -- selection canal (gauche)
         pcm_data   : out std_logic_vector(15 downto 0);  -- echantillon PCM SIGNE (complement a 2)
@@ -75,7 +77,7 @@ begin
                 compteur_div <= 0;
                 clk_mic_r    <= not clk_mic_r;
 
-                if clk_mic_r = '0' then          -- clk_mic va monter : on lit le bit PDM
+                if clk_mic_r = front_ech then    -- clk_mic va monter (ou descendre) : on lit le bit PDM
                     if pdm_s2 = '1' then bit_in := 1; else bit_in := 0; end if;
                     if sr1(N_FILTRE - 1) = '1' then bit_old := 1; else bit_old := 0; end if;
 
