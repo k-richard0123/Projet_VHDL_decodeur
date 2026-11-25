@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Station SSTV Robot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&display=swap" rel="stylesheet">
+<style>
+/* VOICE work: an instrument for radio amateurs, precise and calm
+   IDEA a two-channel SSTV station: transmitter screen on the left, receiver screen on the right
+   PICTURE the two black screens (image + spectrogram), the signal visible as it really is
+   COLOUR white ground, black ink, black screens, signal red #e4002b for sync/action, spectrum blue→red→yellow
+   TYPE Archivo wide 800 for titles, Archivo for text
+   LAYOUT laptop: title band, then TX | RX side by side, reference table below; phone: TX then RX stacked */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#0e0e0e);--ink:light-dark(#111111,#f1f1ef);--mute:light-dark(#5b5b58,#a3a39e);--line:light-dark(#d9d9d5,#2c2c2a);--panel:light-dark(#f5f5f2,#171716);--red:#e4002b;--redink:light-dark(#c4001f,#ff4d6a);--screen:#060607}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 Archivo,system-ui,sans-serif;overflow-x:clip}
+.band{padding-block:clamp(20px,3vw,40px);padding-left:max(4vw,16px);padding-right:max(4vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+.top{border-top:6px solid var(--red);padding-bottom:8px}
+h1{font-size:clamp(32px,4.6vw,48px);line-height:1.05;letter-spacing:-.02em;font-weight:800;font-stretch:112%;margin:0 0 8px;text-wrap:balance}
+.top p{margin:0;color:var(--mute);max-width:70ch}
+h2{font-size:24px;line-height:1.1;font-weight:800;font-stretch:112%;margin:0;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(16px,2.4vw,32px);padding-top:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.tag{font-size:14px;color:var(--mute);font-variant-numeric:tabular-nums}
+.screen{position:relative;aspect-ratio:4/3;background:var(--screen);border-radius:4px;overflow:hidden;border:1px solid #000}
+.screen canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+.screen.drag{outline:3px dashed var(--red);outline-offset:-6px}
+.over{position:absolute;inset:0;display:grid;place-items:center;color:#c9c9c4;font-size:15px;text-align:center;padding:16px;pointer-events:none}
+.scan{position:absolute;left:0;right:0;height:2px;background:var(--red);box-shadow:0 0 8px var(--red);display:none}
+.wf{position:relative;height:124px;background:var(--screen);border-radius:4px;overflow:hidden;border:1px solid #000}
+.wf canvas{position:absolute;inset:0;width:100%;height:100%}
+.fl{position:absolute;left:6px;transform:translateY(-50%);font-size:13px;line-height:1;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none}
+.fl.s{color:#ff8a9c}
+.tl{position:absolute;top:6px;font-size:13px;line-height:1;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000;white-space:nowrap;pointer-events:none;border-left:1px solid #fff8;padding-left:4px}
+.wf .rule{position:absolute;left:0;right:0;border-top:1px dashed #ffffff30;pointer-events:none}
+.ctl{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:end}
+.f{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--mute)}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden;background:var(--bg)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{padding:0 12px;min-height:44px;display:flex;align-items:center;font-size:15px;color:var(--ink);cursor:pointer;border-right:1px solid var(--line);white-space:nowrap}
+.seg label:last-of-type{border-right:0}
+.seg input:checked+label{background:var(--ink);color:var(--bg)}
+.seg input:focus-visible+label{outline:2px solid var(--red);outline-offset:-2px}
+select{font:inherit;font-size:16px;min-height:44px;padding:0 10px;border:1px solid var(--line);border-radius:4px;background:var(--bg);color:var(--ink)}
+.btn{font:inherit;font-size:15px;font-weight:600;min-height:44px;padding:0 16px;border-radius:4px;border:1px solid var(--ink);background:var(--bg);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{background:color-mix(in srgb,var(--ink) 8%,var(--bg))}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible,select:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.btn.go{background:var(--red);border-color:var(--red);color:#fff}
+.btn.go:hover{background:#c4001f}
+.btn:disabled{opacity:.45;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+input[type=file]{display:none}
+audio{width:100%;height:44px}
+.status{font-size:15px;min-height:1.55em;font-variant-numeric:tabular-nums}
+.status b{font-weight:700}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--red);transition:width .15s}
+.log{margin:0;padding:0;list-style:none;font-size:14px;color:var(--mute);max-height:7.6em;overflow:auto;font-variant-numeric:tabular-nums}
+.note{font-size:14px;color:var(--mute);margin:0}
+.ref h2{margin-bottom:12px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:10px 12px 10px 0;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:700;border-bottom:2px solid var(--ink)}
+td.n{white-space:nowrap;font-variant-numeric:tabular-nums}
+.cols{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:clamp(16px,3vw,40px);align-items:start}
+.cols p{margin:0 0 10px}
+@media(max-width:960px){.grid{grid-template-columns:minmax(0,1fr)}.cols{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:10px;border-bottom:1px solid var(--line)}.stack td{display:flex;justify-content:space-between;gap:12px;border:0;padding:3px 0}.stack td::before{content:attr(data-l);color:var(--mute);flex:none}.seg{width:100%}.seg label{flex:1;justify-content:center;text-align:center;padding:0 4px;font-size:13px;line-height:1.2;white-space:normal}}
+@media(prefers-reduced-motion:reduce){.bar i{transition:none}.scan{box-shadow:none}}
+</style>
+</head>
+<body>
+<header class="band top"><div class="wrap">
+  <h1>Station SSTV Robot</h1>
+  <p>Transformez une image en son SSTV, puis décodez-la : Robot 8 N&amp;B, Robot 36 N&amp;B et Robot 36 couleur. Tout se calcule dans votre navigateur.</p>
+</div></header>
+
+<main class="band" style="padding-top:0"><div class="wrap grid">
+  <section class="panel" id="tx" aria-labelledby="txh">
+    <div class="ph"><h2 id="txh">Émission</h2><span class="tag" id="txInfo"></span></div>
+    <div class="screen" id="drop">
+      <canvas id="txImg" width="320" height="240" aria-label="Image transmise"></canvas>
+    </div>
+    <div class="wf" id="txWf"><canvas id="txSpec" aria-label="Spectrogramme du début du signal"></canvas></div>
+    <div class="ctl">
+      <div class="f">Mode
+        <div class="seg" role="radiogroup" aria-label="Mode SSTV">
+          <input type="radio" name="txMode" id="m-r8bw" value="r8bw"><label for="m-r8bw">Robot 8 N&amp;B</label>
+          <input type="radio" name="txMode" id="m-r36bw" value="r36bw"><label for="m-r36bw">Robot 36 N&amp;B</label>
+          <input type="radio" name="txMode" id="m-r36" value="r36" checked><label for="m-r36">Robot 36 couleur</label>
+        </div>
+      </div>
+      <label class="f" for="fit">Cadrage
+        <select id="fit"><option value="fit">Image entière</option><option value="crop">Remplir (rogner)</option><option value="stretch">Étirer</option></select>
+      </label>
+      <label class="f" for="rate">Échantillonnage
+        <select id="rate"><option>11025</option><option>22050</option><option selected>44100</option><option>48000</option></select>
+      </label>
+    </div>
+    <div class="row">
+      <label class="btn" for="imgFile">Choisir une image…</label><input type="file" id="imgFile" accept="image/*">
+      <button class="btn" id="testCard" type="button">Mire d'exemple</button>
+      <span class="note">ou glissez une image sur l'écran</span>
+    </div>
+    <audio id="player" controls></audio>
+    <div class="row">
+      <button class="btn" id="saveWav" type="button">Enregistrer le .wav</button>
+      <button class="btn go" id="toRx" type="button">Décoder ce signal →</button>
+    </div>
+    <p class="status" id="txStatus" role="status"></p>
+  </section>
+
+  <section class="panel" id="rx" aria-labelledby="rxh">
+    <div class="ph"><h2 id="rxh">Réception</h2><span class="tag" id="rxInfo">En attente</span></div>
+    <div class="screen" id="rxDrop">
+      <canvas id="rxImg" width="320" height="240" aria-label="Image décodée"></canvas>
+      <div class="scan" id="scan"></div>
+      <div class="over" id="rxOver">Ouvrez un fichier audio SSTV ou décodez le signal émis</div>
+    </div>
+    <div class="wf" id="rxWf"><canvas id="rxSpec" aria-label="Spectrogramme du signal reçu"></canvas></div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="ctl">
+      <label class="f" for="rxMode">Détection du mode
+        <select id="rxMode"><option value="">Automatique (code VIS)</option><option value="r8bw">Forcer Robot 8 N&amp;B</option><option value="r36bw">Forcer Robot 36 N&amp;B</option><option value="r36">Forcer Robot 36 couleur</option></select>
+      </label>
+      <label class="btn" for="audFile">Ouvrir un audio…</label><input type="file" id="audFile" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a">
+    </div>
+    <div class="row">
+      <button class="btn go" id="decFast" type="button">Décoder</button>
+      <button class="btn" id="decPlay" type="button">Lire et décoder</button>
+      <button class="btn" id="decMic" type="button">Micro</button>
+      <button class="btn" id="decStop" type="button">Arrêter</button>
+      <button class="btn" id="savePng" type="button">Enregistrer l'image</button>
+    </div>
+    <p class="status" id="rxStatus" role="status"></p>
+    <ul class="log" id="log"></ul>
+  </section>
+</div></main>
+
+<section class="band ref"><div class="wrap cols">
+  <div>
+    <h2>Les trois modes</h2>
+    <div class="scroll"><table class="stack">
+      <thead><tr><th>Mode</th><th>VIS</th><th>Image</th><th>Une ligne</th><th>Durée</th></tr></thead>
+      <tbody>
+        <tr><td data-l="Mode">Robot 8 N&amp;B</td><td class="n" data-l="VIS">2</td><td class="n" data-l="Image">160 × 120</td><td data-l="Une ligne">sync 10 ms, luminance 56 ms</td><td class="n" data-l="Durée">7,9 s</td></tr>
+        <tr><td data-l="Mode">Robot 36 N&amp;B</td><td class="n" data-l="VIS">14</td><td class="n" data-l="Image">320 × 240</td><td data-l="Une ligne">sync 12 ms, luminance 138 ms</td><td class="n" data-l="Durée">36 s</td></tr>
+        <tr><td data-l="Mode">Robot 36 couleur</td><td class="n" data-l="VIS">8</td><td class="n" data-l="Image">320 × 240</td><td data-l="Une ligne">sync 9, palier 3, Y 88, séparateur 4,5, palier 1,5, R‑Y ou B‑Y 44 ms</td><td class="n" data-l="Durée">36 s</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div>
+    <p class="note">Chaque émission commence par l'en-tête de calibration : 1900 Hz pendant 300 ms, 1200 Hz pendant 10 ms, 1900 Hz pendant 300 ms, puis 10 bits VIS de 30 ms (1100 Hz = 1, 1300 Hz = 0, parité paire). La sync est à 1200 Hz, le noir à 1500 Hz, le blanc à 2300 Hz.</p>
+    <p class="note">En Robot 36 couleur, les lignes paires portent R‑Y (séparateur 1500 Hz) et les impaires B‑Y (2300 Hz). La couleur est donc partagée entre deux lignes. Dans Claude, le .wav est livré dans un .zip et le micro est bloqué ; enregistrez cette page et ouvrez-la en local pour avoir les deux.</p>
+  </div>
+</div></section>
+
+<script id="core">
+/* ===================== Noyau SSTV (sans DOM) ===================== */
+const MODES={
+  r8bw:{id:'r8bw',name:'Robot 8 N&B',W:160,H:120,vis:2,color:false,sync:10,scan:56,period:66},
+  r36bw:{id:'r36bw',name:'Robot 36 N&B',W:320,H:240,vis:14,color:false,sync:12,scan:138,period:150},
+  r36:{id:'r36',name:'Robot 36 couleur',W:320,H:240,vis:8,color:true,sync:9,period:150}
+};
+const VIS2MODE={2:'r8bw',14:'r36bw',8:'r36'};
+
+function encodeSSTV(rgba,modeId,fs){
+  const m=MODES[modeId],W=m.W,H=m.H,TW=2*Math.PI;
+  const out=new Float32Array(Math.ceil((1+0.91+H*m.period/1000+0.01)*fs)+64);
+  let n=0,t=0,ph=0;
+  const tone=(f,ms)=>{t+=ms*fs/1000;const end=Math.round(t),d=TW*f/fs;while(n<end){ph+=d;if(ph>TW)ph-=TW;out[n++]=Math.sin(ph);}};
+  const sil=ms=>{t+=ms*fs/1000;n=Math.round(t);ph=0;};
+  const v2f=v=>1500+Math.max(0,Math.min(255,v))*800/255;
+  sil(500);
+  tone(1900,300);tone(1200,10);tone(1900,300);tone(1200,30);
+  let ones=0;
+  for(let i=0;i<7;i++){const b=(m.vis>>i)&1;ones+=b;tone(b?1100:1300,30);}
+  tone(ones&1?1100:1300,30);tone(1200,30);
+  const P=(x,y)=>(y*W+x)*4;
+  if(!m.color){
+    const pm=m.scan/W;
+    for(let y=0;y<H;y++){tone(1200,m.sync);for(let x=0;x<W;x++){const i=P(x,y);tone(v2f(.299*rgba[i]+.587*rgba[i+1]+.114*rgba[i+2]),pm);}}
+  }else{
+    for(let y=0;y<H;y++){
+      const even=y%2===0,ya=y&~1,yb=Math.min(ya+1,H-1);
+      tone(1200,9);tone(1500,3);
+      for(let x=0;x<W;x++){const i=P(x,y);tone(v2f(16+(65.738*rgba[i]+129.057*rgba[i+1]+25.064*rgba[i+2])/256),88/W);}
+      tone(even?1500:2300,4.5);tone(1900,1.5);
+      for(let c=0;c<W/2;c++){
+        let r=0,g=0,b=0;
+        for(const xx of [2*c,Math.min(2*c+1,W-1)])for(const yy of [ya,yb]){const i=P(xx,yy);r+=rgba[i];g+=rgba[i+1];b+=rgba[i+2];}
+        r/=4;g/=4;b/=4;
+        tone(v2f(even?128+(112.439*r-94.154*g-18.285*b)/256:128+(-37.945*r-74.494*g+112.439*b)/256),44/(W/2));
+      }
+    }
+  }
+  tone(1200,9);sil(500);
+  return out.subarray(0,n);
+}
+
+function wavBlob(f32,fs,amp=0.8){
+  const n=f32.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const s=(o,str)=>{for(let i=0;i<str.length;i++)v.setUint8(o+i,str.charCodeAt(i));};
+  s(0,'RIFF');v.setUint32(4,36+n*2,true);s(8,'WAVE');s(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,fs,true);v.setUint32(28,fs*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);s(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++)v.setInt16(44+i*2,Math.round(Math.max(-1,Math.min(1,f32[i]*amp))*32767),true);
+  return new Blob([buf],{type:'audio/wav'});
+}
+
+/* ZIP sans compression (pour livrer le .wav là où seul .zip est autorisé) */
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+async function zipStore(name,blob){
+  const data=new Uint8Array(await blob.arrayBuffer()),nm=new TextEncoder().encode(name);
+  let c=0xFFFFFFFF;for(let i=0;i<data.length;i++)c=CRC[(c^data[i])&255]^(c>>>8);c=(c^0xFFFFFFFF)>>>0;
+  const lh=new DataView(new ArrayBuffer(30)),cd=new DataView(new ArrayBuffer(46)),ed=new DataView(new ArrayBuffer(22));
+  lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint32(14,c,true);lh.setUint32(18,data.length,true);lh.setUint32(22,data.length,true);lh.setUint16(26,nm.length,true);
+  cd.setUint32(0,0x02014b50,true);cd.setUint16(4,20,true);cd.setUint16(6,20,true);cd.setUint32(16,c,true);cd.setUint32(20,data.length,true);cd.setUint32(24,data.length,true);cd.setUint16(28,nm.length,true);
+  const cdOff=30+nm.length+data.length;
+  ed.setUint32(0,0x06054b50,true);ed.setUint16(8,1,true);ed.setUint16(10,1,true);ed.setUint32(12,46+nm.length,true);ed.setUint32(16,cdOff,true);
+  return new Blob([lh,nm,data,cd,nm,ed],{type:'application/zip'});
+}
+
+function fft(re,im){
+  const n=re.length;
+  for(let i=1,j=0;i<n;i++){let bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+  for(let len=2;len<=n;len<<=1){
+    const a=-2*Math.PI/len,wr=Math.cos(a),wi=Math.sin(a),h=len>>1;
+    for(let i=0;i<n;i+=len){let cr=1,ci=0;for(let k=0;k<h;k++){const p=i+k,q=p+h,xr=re[q]*cr-im[q]*ci,xi=re[q]*ci+im[q]*cr;re[q]=re[p]-xr;im[q]=im[p]-xi;re[p]+=xr;im[p]+=xi;const t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t;}}
+  }
+}
+
+/* Tampon à indices absolus, avec purge du début */
+class Stream{
+  constructor(){this.a=new Float64Array(1<<18);this.off=0;this.n=0;}
+  push(v){const i=this.n-this.off;if(i>=this.a.length){const b=new Float64Array(this.a.length*2);b.set(this.a);this.a=b;}this.a[i]=v;this.n++;}
+  at(i){return this.a[Math.min(Math.max(i,this.off),this.n-1)-this.off];}
+  trim(from){const k=from-this.off;if(k<=0)return;this.a.copyWithin(0,k,this.n-this.off);this.off=from;}
+}
+
+/* Décodeur en flux : push(échantillons) autant de fois que nécessaire */
+class SSTVDecoder{
+  constructor(fs,opt={}){
+    this.fs=fs;this.opt=opt;
+    const N=Math.round(5.5*fs/1100)|1,fc=1800/fs,h=new Float64Array(N);let sum=0;
+    for(let k=0;k<N;k++){const x=k-(N-1)/2,s=x===0?2*fc:Math.sin(2*Math.PI*fc*x)/(Math.PI*x),w=0.42-0.5*Math.cos(2*Math.PI*k/(N-1))+0.08*Math.cos(4*Math.PI*k/(N-1));h[k]=s*w;sum+=h[k];}
+    for(let k=0;k<N;k++)h[k]/=sum;
+    Object.assign(this,{N,h,bi:new Float64Array(2*N),bq:new Float64Array(2*N),bp:0,ph:0,dph:2*Math.PI*1900/fs,zi:0,zq:0,acc:0});
+    this.P=new Stream();this.P.push(0);
+    this.state='search';this.scan=0;this.m=null;
+  }
+  ms(x){return x*this.fs/1000;}
+  avail(){return this.P.n-1;}
+  mean(a,b){a=Math.round(a);b=Math.round(b);if(a<this.P.off)a=this.P.off;if(b<=a)b=a+1;if(b>this.avail())b=this.avail();if(b<=a)return 0;return(this.P.at(b)-this.P.at(a))/(b-a);}
+  push(x){
+    const{N,h,bi,bq,dph,fs}=this,P=this.P,TW=2*Math.PI,K=fs/TW;
+    for(let n=0;n<x.length;n++){
+      const s=x[n],p=this.bp;
+      bi[p]=bi[p+N]=s*Math.cos(this.ph);bq[p]=bq[p+N]=-s*Math.sin(this.ph);
+      this.ph+=dph;if(this.ph>TW)this.ph-=TW;
+      const o=this.bp=(p+1)%N;
+      let yi=0,yq=0;for(let k=0;k<N;k++){yi+=h[k]*bi[o+k];yq+=h[k]*bq[o+k];}
+      const re=yi*this.zi+yq*this.zq,im=yq*this.zi-yi*this.zq;
+      this.zi=yi;this.zq=yq;
+      let f=(yi*yi+yq*yq<1e-10||re*re+im*im<1e-20)?0:1900+Math.atan2(im,re)*K;
+      if(f<0)f=0;else if(f>3500)f=3500;
+      this.acc+=f;P.push(this.acc);
+    }
+    this.run();
+  }
+  run(){for(let g=0;g<100000;g++){if(this.state==='search'){if(!this.search())return;}else if(!this.line())return;}}
+  log(m){this.opt.onLog&&this.opt.onLog(m);}
+  edge(s,span){let best=-1e9,bp=s;for(let p=Math.round(s-span);p<=s+span;p++){const d=this.mean(p-this.ms(4),p)-this.mean(p,p+this.ms(4));if(d>best){best=d;bp=p;}}return bp;}
+  search(){
+    const forced=this.opt.forced?MODES[this.opt.forced]:null,step=Math.max(1,Math.round(this.ms(1)));
+    const need=Math.max(this.ms(306),forced?this.ms(forced.period+forced.sync+8):0);
+    let s=Math.max(this.scan,this.P.off+Math.round(this.ms(260)));
+    while(s+need<this.avail()){
+      if(Math.abs(this.mean(s+this.ms(3),s+this.ms(27))-1200)<70&&Math.abs(this.mean(s-this.ms(250),s-this.ms(20))-1900)<70){
+        const p=this.edge(s+this.ms(2),this.ms(5)),r=this.readVIS(p);
+        if(r!==null){
+          const id=forced?forced.id:VIS2MODE[r];
+          if(id){this.start(id,p+this.ms(300),'VIS '+r+(forced?' (mode forcé)':''));return true;}
+          this.log('Code VIS '+r+' reçu : mode non pris en charge');s=Math.round(p+this.ms(300));continue;
+        }
+      }
+      if(forced){
+        const L=this.ms(forced.sync),T=this.ms(forced.period);
+        if(Math.abs(this.mean(s,s+L)-1200)<80&&this.mean(s-this.ms(3),s)>1400&&Math.abs(this.mean(s+T,s+T+L)-1200)<120&&this.mean(s+L+this.ms(1),s+L+this.ms(3))>1400){
+          this.start(forced.id,this.edge(s,this.ms(1.5)),'sync détectée sans VIS');return true;
+        }
+      }
+      s+=step;
+    }
+    this.scan=s;
+    if(s-this.P.off>this.ms(30000))this.P.trim(Math.round(s-this.ms(3000)));
+    return false;
+  }
+  readVIS(p){
+    let code=0,ones=0;
+    for(let k=0;k<8;k++){const m=this.mean(p+this.ms(30*(k+1)+6),p+this.ms(30*(k+2)-6));if(m<1000||m>1400)return null;const b=m<1200?1:0;if(k<7)code|=b<<k;ones+=b;}
+    if(Math.abs(this.mean(p+this.ms(276),p+this.ms(294))-1200)>90)return null;
+    if(ones&1){this.log('Parité VIS incorrecte (code '+code+')');return null;}
+    return code;
+  }
+  start(id,t0,why){
+    const m=this.m=MODES[id];
+    Object.assign(this,{state:'image',t0,n:0,pts:[],fit:null,RY:null,BY:null,prevY:null,prevN:-9});
+    this.opt.onStart&&this.opt.onStart(m,why);
+  }
+  predict(n){const per=this.ms(this.m.period);if(this.fit)return this.fit[0]+this.fit[1]*n;if(this.pts.length){const[ln,lp]=this.pts[this.pts.length-1];return lp+(n-ln)*per;}return this.t0+n*per;}
+  refit(){
+    let pts=this.pts;const per=this.ms(this.m.period);
+    for(let it=0;it<2;it++){
+      let sn=0,sp=0,snn=0,snp=0;const k=pts.length;
+      for(const[n,p]of pts){sn+=n;sp+=p;snn+=n*n;snp+=n*p;}
+      const den=k*snn-sn*sn;if(!den)return;
+      const b=(k*snp-sn*sp)/den,a=(sp-b*sn)/k;
+      if(Math.abs(b/per-1)>0.02)return;
+      this.fit=[a,b];
+      if(k<=8)return;
+      const tol=this.ms(1.2),f=pts.filter(([n,p])=>Math.abs(p-(a+b*n))<tol);
+      if(f.length===k||f.length<k/2)return;
+      pts=f;
+    }
+  }
+  line(){
+    const m=this.m,per=this.ms(m.period),L=this.ms(m.sync),n=this.n;
+    const pred=this.predict(n),W=this.ms(n<4?6:2.5);
+    if(pred+Math.max(per,L+W+this.ms(4))+W+4>this.avail())return false;
+    /* 1) fenêtre de la sync : moyenne minimale ; 2) fin du plateau ; 3) front montant précis */
+    const st=Math.max(1,Math.round(this.fs/8000));
+    let bm=1e9,bp=Math.round(pred);
+    for(let p=Math.round(pred-W);p<=pred+W;p+=st){const mm=this.mean(p,p+L);if(mm<bm){bm=mm;bp=p;}}
+    let pe=bp;for(let p=bp;p<=pred+W+this.ms(2);p+=st){if(this.mean(p,p+L)<bm+25)pe=p;else break;}
+    let best=-1e9,e0=Math.round(pe+L);const e1=this.ms(1),e2=this.ms(2);
+    for(let e=Math.round(pe+L-this.ms(1.5));e<=pe+L+this.ms(1.5);e++){const d=this.mean(e,e+e1)-this.mean(e-e2,e);if(d>best){best=d;e0=e;}}
+    bp=Math.round(e0-L);
+    const ok=bm<1350&&best>150;
+    if(ok){this.pts.push([n,bp]);if(this.pts.length>=4)this.refit();}
+    const q=this.fit&&this.pts.length>=6?this.fit[0]+this.fit[1]*n:(ok?bp:pred);
+    this.decodeLine(q,n);
+    this.n++;
+    this.opt.onProgress&&this.opt.onProgress(this.n,m.H,ok);
+    if(this.n>=m.H){this.state='search';this.scan=Math.round(q+per);this.opt.onDone&&this.opt.onDone(m);}
+    return true;
+  }
+  val(a,b){return(this.mean(a,b)-1500)*255/800;}
+  /* pixel [a,a+d] sans déborder sur ce qui suit la zone utile (fin = end) */
+  pix(a,d,end){let b=Math.min(a+d,end-this.ms(0.3));if(b-a<d*0.6)a=b-d*0.6;return this.val(a,b);}
+  decodeLine(q,n){
+    const m=this.m,W=m.W,ms=this.ms.bind(this),row=new Uint8ClampedArray(W*4);
+    if(!m.color){
+      const pm=m.scan/W;
+      const end=q+ms(m.period);
+      for(let x=0;x<W;x++){const a=q+ms(m.sync+x*pm),v=this.pix(a,ms(pm),end);row[x*4]=row[x*4+1]=row[x*4+2]=v;row[x*4+3]=255;}
+      this.opt.onRow&&this.opt.onRow(n,row);return;
+    }
+    const Y=new Float32Array(W),C=new Float32Array(W/2),py=88/W,pc=44/(W/2);
+    for(let x=0;x<W;x++){const a=q+ms(12+x*py);Y[x]=this.pix(a,ms(py),q+ms(100));}
+    for(let c=0;c<W/2;c++){const a=q+ms(106+c*pc);C[c]=this.pix(a,ms(pc),q+ms(150));}
+    const isBY=this.mean(q+ms(100.5),q+ms(104))>1900;
+    if(!isBY){this.RY=C;this.prevY=Y;this.prevN=n;this.emit(n,Y);}
+    else{this.BY=C;this.emit(n,Y);if(this.prevN===n-1)this.emit(n-1,this.prevY);}
+  }
+  emit(n,Y){
+    const W=Y.length,row=new Uint8ClampedArray(W*4),RY=this.RY,BY=this.BY,H=W/2;
+    const ip=(C,x)=>{if(!C)return 128;let c=(x+0.5)/2-0.5;if(c<0)c=0;if(c>H-1)c=H-1;const i=Math.floor(c),j=Math.min(i+1,H-1),t=c-i;return C[i]*(1-t)+C[j]*t;};
+    for(let x=0;x<W;x++){
+      const y=1.164*(Y[x]-16),cr=ip(RY,x)-128,cb=ip(BY,x)-128;
+      row[x*4]=y+1.596*cr;row[x*4+1]=y-0.813*cr-0.391*cb;row[x*4+2]=y+2.018*cb;row[x*4+3]=255;
+    }
+    this.opt.onRow&&this.opt.onRow(n,row);
+  }
+}
+</script>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return localStorage.getItem('sstv.'+k)??d}catch(e){return d}},set(k,v){try{localStorage.setItem('sstv.'+k,v)}catch(e){}}};
+const fmt=(x,d=1)=>x.toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d});
+
+/* ---------- Palette et spectrogrammes ---------- */
+const LUT=(()=>{const st=[[0,[5,6,8]],[.35,[29,43,216]],[.65,[228,0,43]],[.85,[255,216,74]],[1,[255,255,255]]],t=new Uint8Array(768);
+  for(let i=0;i<256;i++){const x=i/255;let k=0;while(k<st.length-2&&x>st[k+1][0])k++;const[a,ca]=st[k],[b,cb]=st[k+1],u=(x-a)/(b-a);for(let c=0;c<3;c++)t[i*3+c]=ca[c]+(cb[c]-ca[c])*u;}return t;})();
+const FLO=1000,FHI=2700;
+function fsize(fs){return 1<<Math.max(7,Math.round(Math.log2(fs*0.011)));}
+function column(seg,fs,Hpx,win){
+  const N=seg.length,re=new Float64Array(N),im=new Float64Array(N);
+  for(let i=0;i<N;i++)re[i]=seg[i]*win[i];
+  fft(re,im);
+  const out=new Float32Array(Hpx);
+  for(let y=0;y<Hpx;y++){const f=FHI-(y+0.5)/Hpx*(FHI-FLO),b=f*N/fs,i=Math.floor(b),t=b-i;
+    const m0=Math.hypot(re[i],im[i]),m1=Math.hypot(re[i+1],im[i+1]);out[y]=20*Math.log10(m0*(1-t)+m1*t+1e-9);}
+  return out;
+}
+const hann=N=>Float64Array.from({length:N},(_,i)=>0.5-0.5*Math.cos(2*Math.PI*i/(N-1)));
+function paint(img,x,col,Wpx,top,range){
+  for(let y=0;y<col.length;y++){let v=(col[y]-(top-range))/range;v=v<0?0:v>1?1:v;const c=Math.round(v*255)*3,o=(y*Wpx+x)*4;img.data[o]=LUT[c];img.data[o+1]=LUT[c+1];img.data[o+2]=LUT[c+2];img.data[o+3]=255;}
+}
+function fitCanvas(c){const r=c.getBoundingClientRect(),d=Math.min(2,window.devicePixelRatio||1),w=Math.max(10,Math.round(r.width*d)),h=Math.max(10,Math.round(r.height*d));if(c.width!==w||c.height!==h){c.width=w;c.height=h;return true;}return false;}
+function freqLabels(box){
+  for(const[f,t,s]of[[2300,'2300 Hz blanc'],[1900,'1900'],[1500,'1500 Hz noir'],[1200,'1200 Hz sync',1]]){
+    const top=(FHI-f)/(FHI-FLO)*100;
+    box.insertAdjacentHTML('beforeend',`<div class="rule" style="top:${top}%"></div><div class="fl${s?' s':''}" style="top:${top}%">${t}</div>`);
+  }
+}
+freqLabels($('txWf'));freqLabels($('rxWf'));
+
+const T0=0.3,T1=3.0;
+function drawTxSpec(){
+  const c=$('txSpec');fitCanvas(c);
+  const g=c.getContext('2d'),Wp=c.width,Hp=c.height,img=g.createImageData(Wp,Hp);
+  if(!enc){g.putImageData(img,0,0);return;}
+  const{samples,fs}=enc,N=fsize(fs),win=hann(N),cols=[];let top=-1e9;
+  for(let x=0;x<Wp;x++){const t=T0+(x+0.5)/Wp*(T1-T0),s=Math.round(t*fs-N/2),seg=samples.subarray(Math.max(0,s),Math.max(0,s)+N);
+    const pad=seg.length<N?Float32Array.from({length:N},(_,i)=>seg[i]||0):seg,col=column(pad,fs,Hp,win);cols.push(col);for(const v of col)if(v>top)top=v;}
+  cols.forEach((col,x)=>paint(img,x,col,Wp,top,50));
+  g.putImageData(img,0,0);
+}
+function txTimeLabels(){
+  const box=$('txWf');box.querySelectorAll('.tl').forEach(e=>e.remove());
+  for(const[t,s]of[[0.5,'en-tête'],[1.11,'VIS'],[1.41,'lignes →']]){
+    box.insertAdjacentHTML('beforeend',`<div class="tl" style="left:${(t-T0)/(T1-T0)*100}%">${s}</div>`);
+  }
+}
+txTimeLabels();
+
+class Waterfall{
+  constructor(c){this.c=c;this.g=c.getContext('2d');this.reset(48000);}
+  reset(fs){this.fs=fs;this.N=fsize(fs);this.win=hann(this.N);this.hop=Math.round(fs*0.01);this.buf=new Float32Array(this.N);this.k=0;this.cnt=0;this.pend=[];this.top=-1e9;fitCanvas(this.c);this.g.fillStyle='#060607';this.g.fillRect(0,0,this.c.width,this.c.height);}
+  push(x){const N=this.N;for(let i=0;i<x.length;i++){this.buf[this.k]=x[i];this.k=(this.k+1)%N;if(++this.cnt>=this.hop){this.cnt=0;const seg=new Float32Array(N);seg.set(this.buf.subarray(this.k));seg.set(this.buf.subarray(0,this.k),N-this.k);this.pend.push(column(seg,this.fs,this.c.height,this.win));}}}
+  render(){
+    if(fitCanvas(this.c)){this.g.fillStyle='#060607';this.g.fillRect(0,0,this.c.width,this.c.height);this.pend=[];return;}
+    const Wp=this.c.width,Hp=this.c.height;let p=this.pend;this.pend=[];if(!p.length)return;if(p.length>Wp)p=p.slice(-Wp);
+    if(p[0].length!==Hp)return;
+    for(const col of p){let mx=-1e9;for(const v of col)if(v>mx)mx=v;this.top=Math.max(mx,this.top-0.4);}
+    const k=p.length;this.g.drawImage(this.c,-k,0);
+    const img=this.g.createImageData(k,Hp);p.forEach((col,x)=>paint(img,x,col,k,this.top,48));this.g.putImageData(img,Wp-k,0);
+  }
+}
+const wf=new Waterfall($('rxSpec'));
+(function loop(){wf.render();requestAnimationFrame(loop);})();
+
+/* ---------- Téléchargements ---------- */
+let dl=null;
+try{if(window.claude&&window.claude.use)window.claude.use('downloads').then(d=>{dl=d;}).catch(()=>{});}catch(e){}
+async function saveFile(name,blob,statusEl){
+  if(dl){
+    if(/\.wav$/i.test(name)){blob=await zipStore(name,blob);name=name.replace(/\.wav$/i,'.zip');}
+    try{await dl.save({filename:name,data:blob});statusEl.textContent=name+' enregistré.';}
+    catch(e){statusEl.textContent=e&&e.code==='declined'?'Enregistrement annulé.':'Enregistrement impossible ici ('+(e&&e.code||'erreur')+').';}
+    return;
+  }
+  const a=document.createElement('a'),u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);
+  statusEl.textContent=name+' enregistré.';
+}
+
+/* ---------- Émission ---------- */
+let srcImg=null,srcName='mire',enc=null,wavUrl=null;
+function testCard(){
+  const c=document.createElement('canvas');c.width=640;c.height=480;const g=c.getContext('2d');
+  const sky=g.createLinearGradient(0,0,0,480);sky.addColorStop(0,'#1d2bd8');sky.addColorStop(1,'#7fb2ff');g.fillStyle=sky;g.fillRect(0,0,640,480);
+  ['#fff','#ff0','#0ff','#0f0','#f0f','#f00','#00f','#000'].forEach((col,i)=>{g.fillStyle=col;g.fillRect(i*80,40,80,190);});
+  for(let x=0;x<640;x++){const v=Math.round(x/639*255);g.fillStyle=`rgb(${v},${v},${v})`;g.fillRect(x,250,1,60);}
+  g.fillStyle='#e4002b';g.beginPath();g.arc(320,395,62,0,7);g.fill();g.lineWidth=10;g.strokeStyle='#fff';g.stroke();
+  g.fillStyle='#fff';g.font='800 64px Archivo, sans-serif';g.textBaseline='middle';g.fillText('SSTV',24,395);g.textAlign='right';g.fillText('36 s',616,395);
+  g.strokeStyle='#000';g.lineWidth=8;g.beginPath();g.arc(320,135,70,0,7);g.stroke();
+  return c;
+}
+function downscale(src,W,H){
+  let c=src,w=src.width,h=src.height;
+  while(w>W*2&&h>H*2){const n=document.createElement('canvas');n.width=Math.ceil(w/2);n.height=Math.ceil(h/2);const g=n.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(c,0,0,n.width,n.height);c=n;w=n.width;h=n.height;}
+  return c;
+}
+function prepare(src,mode,fit){
+  const m=MODES[mode],c=document.createElement('canvas');c.width=m.W;c.height=m.H;
+  const g=c.getContext('2d');g.fillStyle='#000';g.fillRect(0,0,m.W,m.H);g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';
+  const s=downscale(src,m.W,m.H),sw=s.width,sh=s.height,sa=sw/sh,da=m.W/m.H;
+  if(fit==='stretch')g.drawImage(s,0,0,m.W,m.H);
+  else if(fit==='fit'){let w,h;if(sa>da){w=m.W;h=Math.round(m.W/sa);}else{h=m.H;w=Math.round(m.H*sa);}g.drawImage(s,(m.W-w)>>1,(m.H-h)>>1,w,h);}
+  else{let sx=0,sy=0,cw=sw,ch=sh;if(sa>da){cw=sh*da;sx=(sw-cw)/2;}else{ch=sw/da;sy=(sh-ch)/2;}g.drawImage(s,sx,sy,cw,ch,0,0,m.W,m.H);}
+  return g.getImageData(0,0,m.W,m.H);
+}
+const txMode=()=>document.querySelector('input[name=txMode]:checked').value;
+function encodeNow(){
+  if(!srcImg)return;
+  const mode=txMode(),fit=$('fit').value,fs=+$('rate').value,m=MODES[mode];
+  const id=prepare(srcImg,mode,fit);
+  const show=new ImageData(new Uint8ClampedArray(id.data),m.W,m.H);
+  if(!m.color)for(let i=0;i<show.data.length;i+=4){const v=.299*show.data[i]+.587*show.data[i+1]+.114*show.data[i+2];show.data[i]=show.data[i+1]=show.data[i+2]=v;}
+  const c=$('txImg');c.width=m.W;c.height=m.H;c.getContext('2d').putImageData(show,0,0);
+  const samples=encodeSSTV(id.data,mode,fs);
+  const blob=wavBlob(samples,fs);
+  enc={samples,fs,blob,mode,name:srcName.replace(/\.[^.]+$/,'')+'_'+mode+'.wav'};
+  if(wavUrl)URL.revokeObjectURL(wavUrl);wavUrl=URL.createObjectURL(blob);$('player').src=wavUrl;
+  $('txInfo').textContent=`${m.W}×${m.H} · VIS ${m.vis} · ${fmt(samples.length/fs)} s · ${fmt(blob.size/1048576)} Mo`;
+  $('txStatus').textContent=`${m.name} prêt : ${srcName}, ${srcImg.width}×${srcImg.height} px → ${m.W}×${m.H}, ${(fs/1000).toLocaleString('fr-FR')} kHz.`;
+  drawTxSpec();
+  store.set('mode',mode);store.set('fit',fit);store.set('rate',fs);
+}
+async function loadImage(file){
+  try{const bmp=await createImageBitmap(file);srcImg=bmp;srcName=file.name;encodeNow();}
+  catch(e){$('txStatus').textContent='Image illisible : '+file.name;}
+}
+$('imgFile').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImage(f);e.target.value='';});
+$('testCard').addEventListener('click',()=>{srcImg=testCard();srcName='mire';encodeNow();});
+document.querySelectorAll('input[name=txMode]').forEach(r=>r.addEventListener('change',encodeNow));
+$('fit').addEventListener('change',encodeNow);$('rate').addEventListener('change',encodeNow);
+const dz=$('drop');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=[...e.dataTransfer.files].find(f=>f.type.startsWith('image/'));if(f)loadImage(f);});
+$('saveWav').addEventListener('click',()=>{if(enc)saveFile(enc.name,enc.blob,$('txStatus'));});
+$('toRx').addEventListener('click',()=>{if(!enc)return;cur={samples:enc.samples,fs:enc.fs,name:enc.name};decodeFast();if(innerWidth<=960)$('rx').scrollIntoView({behavior:'smooth'});});
+let rsz;new ResizeObserver(()=>{clearTimeout(rsz);rsz=setTimeout(drawTxSpec,120);}).observe($('txWf'));
+
+/* ---------- Réception ---------- */
+let cur=null,dec=null,job=0,actx=null,live=null,rxW=320,rxH=240;
+const rxc=$('rxImg'),rxg=rxc.getContext('2d');
+function logLine(t){const li=document.createElement('li');li.textContent=t;const l=$('log');l.prepend(li);while(l.children.length>30)l.lastChild.remove();}
+function setProg(n,H){$('prog').style.width=(H?n/H*100:0)+'%';const s=$('scan');if(H&&n<H){s.style.display='block';s.style.top=(n/H*100)+'%';}else s.style.display='none';}
+function newDecoder(fs){
+  wf.reset(fs);
+  return new SSTVDecoder(fs,{
+    forced:$('rxMode').value||null,
+    onLog:logLine,
+    onStart(m,why){rxW=m.W;rxH=m.H;rxc.width=m.W;rxc.height=m.H;rxg.fillStyle='#000';rxg.fillRect(0,0,m.W,m.H);$('rxOver').style.display='none';
+      $('rxInfo').textContent=`${m.name} · ${m.W}×${m.H}`;$('rxStatus').innerHTML='';$('rxStatus').textContent=`Réception ${m.name} (${why})`;logLine(`${m.name} détecté : ${why}`);setProg(0,m.H);},
+    onRow(y,row){rxg.putImageData(new ImageData(row,rxW,1),0,y);},
+    onProgress(n,H){setProg(n,H);$('rxStatus').textContent=`Ligne ${n} / ${H}`;},
+    onDone(m){setProg(m.H,m.H);$('rxStatus').textContent=`${m.name} : image complète.`;logLine(`Image ${m.name} terminée`);}
+  });
+}
+function stopAll(){
+  job++;
+  if(live){try{live.src&&live.src.stop();}catch(e){}try{live.proc.disconnect();}catch(e){}if(live.stream)live.stream.getTracks().forEach(t=>t.stop());live=null;}
+  setProg(0,0);
+}
+function decodeFast(){
+  if(!cur){$('rxStatus').textContent='Ouvrez d\'abord un fichier audio.';return;}
+  stopAll();const me=job,{samples,fs}=cur;dec=newDecoder(fs);
+  $('rxStatus').textContent='Recherche de l\'en-tête VIS…';logLine('Décodage de '+cur.name);
+  let i=0;const CH=Math.round(fs*0.1);
+  const tick=()=>{
+    if(me!==job)return;
+    const t=performance.now();
+    while(i<samples.length&&performance.now()-t<24){const c=samples.subarray(i,i+CH);dec.push(c);wf.push(c);i+=CH;}
+    if(i<samples.length)setTimeout(tick,0);
+    else{setProg(0,0);if(dec.state==='image')$('rxStatus').textContent=`Fin du fichier à la ligne ${dec.n} / ${dec.m.H}.`;else if(!dec.m){$('rxStatus').textContent='Aucun en-tête VIS trouvé. Essayez de forcer le mode.';logLine('Aucun signal SSTV reconnu');}}
+  };
+  tick();
+}
+function getCtx(){if(!actx)actx=new (window.AudioContext||window.webkitAudioContext)();return actx;}
+async function startLive(node,extra){
+  const ctx=getCtx();await ctx.resume();
+  const proc=ctx.createScriptProcessor(4096,1,1);dec=newDecoder(ctx.sampleRate);
+  proc.onaudioprocess=e=>{const x=new Float32Array(e.inputBuffer.getChannelData(0));dec.push(x);wf.push(x);e.outputBuffer.getChannelData(0).fill(0);};
+  node.connect(proc);proc.connect(ctx.destination);
+  live=Object.assign({proc},extra);
+}
+async function decodePlay(){
+  if(!cur){$('rxStatus').textContent='Ouvrez d\'abord un fichier audio.';return;}
+  stopAll();
+  try{
+    const ctx=getCtx(),buf=ctx.createBuffer(1,cur.samples.length,cur.fs);buf.copyToChannel(cur.samples,0);
+    const src=ctx.createBufferSource();src.buffer=buf;src.connect(ctx.destination);
+    await startLive(src,{src});const me=job;src.onended=()=>{if(me===job){stopAll();logLine('Lecture terminée');}};src.start();
+    $('rxStatus').textContent='Lecture en cours, recherche de l\'en-tête VIS…';logLine('Lecture et décodage en temps réel');
+  }catch(e){$('rxStatus').textContent='Lecture audio impossible : '+e.message;}
+}
+async function decodeMic(){
+  stopAll();
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    const ctx=getCtx();await startLive(ctx.createMediaStreamSource(stream),{stream});
+    $('rxStatus').textContent='Écoute du micro : en attente d\'un en-tête VIS…';logLine('Micro ouvert');
+  }catch(e){$('rxStatus').textContent='Micro indisponible ici. Dans Claude il est bloqué : enregistrez la page et ouvrez-la en local.';}
+}
+async function loadAudio(file){
+  stopAll();$('rxStatus').textContent='Lecture de '+file.name+'…';
+  try{
+    const ab=await file.arrayBuffer(),ab2=await getCtx().decodeAudioData(ab);
+    const n=ab2.length,mix=new Float32Array(n);
+    for(let c=0;c<ab2.numberOfChannels;c++){const d=ab2.getChannelData(c);for(let i=0;i<n;i++)mix[i]+=d[i]/ab2.numberOfChannels;}
+    cur={samples:mix,fs:ab2.sampleRate,name:file.name};logLine(`${file.name} : ${fmt(n/ab2.sampleRate)} s à ${ab2.sampleRate} Hz`);decodeFast();
+  }catch(e){$('rxStatus').textContent='Format audio non reconnu : '+file.name;}
+}
+$('audFile').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadAudio(f);e.target.value='';});
+const rd=$('rxDrop');
+rd.addEventListener('dragover',e=>{e.preventDefault();rd.classList.add('drag');});
+rd.addEventListener('dragleave',()=>rd.classList.remove('drag'));
+rd.addEventListener('drop',e=>{e.preventDefault();rd.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)loadAudio(f);});
+$('decFast').addEventListener('click',decodeFast);
+$('decPlay').addEventListener('click',decodePlay);
+$('decMic').addEventListener('click',decodeMic);
+$('decStop').addEventListener('click',()=>{stopAll();$('rxStatus').textContent='Arrêté.';});
+$('savePng').addEventListener('click',()=>rxc.toBlob(b=>b&&saveFile('sstv_decode.png',b,$('rxStatus')),'image/png'));
+$('rxMode').addEventListener('change',()=>store.set('rx',$('rxMode').value));
+
+/* ---------- Démarrage : mire encodée puis décodée ---------- */
+const sm=store.get('mode','r36');const r=document.getElementById('m-'+sm);if(r)r.checked=true;
+$('fit').value=store.get('fit','fit');$('rate').value=store.get('rate','44100');$('rxMode').value=store.get('rx','');
+srcImg=testCard();encodeNow();
+cur={samples:enc.samples,fs:enc.fs,name:enc.name};decodeFast();
+if(document.fonts)document.fonts.ready.then(()=>{if(srcName==='mire'){srcImg=testCard();encodeNow();}});
+}
+</script>
+</body>
+</html>
