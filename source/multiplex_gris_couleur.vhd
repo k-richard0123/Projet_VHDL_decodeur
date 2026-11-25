@@ -27,9 +27,11 @@ begin
 --gris passe au moins tout le temps
     gris_out <= gris;
 
-    -- Les couleurs passent si sw1 = '1', sinon on force à 0 
-    Cr_out <= Cr when sw1 = '1' else (others => '0');
-    Cb_out <= Cb when sw1 = '1' else (others => '0');
+    -- Les couleurs passent si sw1 = '1', sinon on force la chroma NEUTRE.
+    -- Avec la ROM (1500 Hz -> 0, 2300 Hz -> 255), "pas de couleur" = 1900 Hz = 128 (x"80").
+    -- Forcer 0 donnerait Cr = Cb = -128 apres conversion : image verte, pas grise.
+    Cr_out <= Cr when sw1 = '1' else x"80";
+    Cb_out <= Cb when sw1 = '1' else x"80";
  
         
 end Behavioral;

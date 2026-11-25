@@ -2,7 +2,7 @@
 -- VRAM 320x240 pixels, 8 bits (niveau de gris)
 --
 --  (ecriture port A, lecture port B)
---  init ecran noir 
+--  init ecran BLANC (255) a la programmation du FPGA, et "clear" remet tout en blanc
 --  Adresse = ligne * 320 + colonne   (0 .. 76 799, sur 17 bits)
 --------------------------------------------------------------------------------
 library IEEE;
@@ -29,7 +29,7 @@ architecture Behavioral of vram is
 
     constant NB_PIXELS : integer := 320 * 240;  --lignes fois colonens
     type ram_t is array (0 to NB_PIXELS - 1) of std_logic_vector(7 downto 0);
-    signal ram : ram_t := (others => (others => '0'));        -- init = noir (0 c'est noir et 255 c'est blanc)
+    signal ram : ram_t := (others => (others => '1'));        -- init = blanc (0 c'est noir et 255 c'est blanc)
     attribute ram_style : string;
     attribute ram_style of ram : signal is "block";
     signal clr_actif : std_logic := '0';
@@ -61,14 +61,20 @@ begin
         end if;
     end process;
 
---?????????
+-- Aiguillage du port d'ecriture :
+--   pendant un effacement (clr_actif = '1'), c'est le compteur clr_cnt qui choisit
+--   l'adresse et on ecrit du blanc partout ; sinon c'est l'etage de decodage
+--   (wr_addr / vram_data_in / wr_en). Les ecritures recues pendant l'effacement
+--   (768 us) sont ignorees.
     addr_int <= clr_cnt when clr_actif = '1' else unsigned(wr_addr);
     data_int <= (others => '1') when clr_actif = '1' else vram_data_in;
     we_int   <= '1' when clr_actif = '1' else
                  '1' when (wr_en = '1' and unsigned(wr_addr) < NB_PIXELS) else
                 '0';
 
---???????
+-- La memoire elle-meme (style "block RAM double port" reconnu par Vivado) :
+--   port A : ecriture si we_int = '1'
+--   port B : lecture, pixel_out disponible 1 cycle apres rd_addr
     p_ram : process(clk)
     begin
         if rising_edge(clk) then

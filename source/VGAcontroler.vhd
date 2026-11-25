@@ -49,14 +49,14 @@ architecture Behavioral of vga_controller is
     constant V_VISIBLE : integer := 480;
     constant V_FP      : integer := 10;
     constant V_SYNC    : integer := 2;
-    constant V_BP      : integer := 29;
-    constant V_TOTAL   : integer := V_VISIBLE + V_FP + V_SYNC + V_BP;   -- 521
+    constant V_BP      : integer := 33;                                 -- standard VESA (avant : 29)
+    constant V_TOTAL   : integer := V_VISIBLE + V_FP + V_SYNC + V_BP;   -- 525
 
     signal div_cnt  : unsigned(1 downto 0) := (others => '0');
     signal pix_en   : std_logic;
 
     signal h_cnt    : unsigned(9 downto 0) := (others => '0');          -- 0 .. 799
-    signal v_cnt    : unsigned(9 downto 0) := (others => '0');          -- 0 .. 520
+    signal v_cnt    : unsigned(9 downto 0) := (others => '0');          -- 0 .. 524
     signal video_on : std_logic;
 
 begin
