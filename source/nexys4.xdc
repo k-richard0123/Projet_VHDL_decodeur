@@ -1,13 +1,21 @@
-## Contraintes pour top_sstv
-## Broches de la Nexys 4 DDR / Nexys A7. A VERIFIER avec le "Master XDC" Digilent
-## de VOTRE carte (sur la Nexys 4 non-DDR, BTNC est en E16 au lieu de N17).
+## Contraintes pour top_sstv -- carte Digilent NEXYS A7 (100T ou 50T)
+## Broches reprises du "Nexys-A7-100T-Master.xdc" Digilent (identiques sur la 50T).
+## Partie FPGA a choisir dans Vivado :
+##   Nexys A7-100T : xc7a100tcsg324-1
+##   Nexys A7-50T  : xc7a50ticsg324-1L
+
+## Configuration (evite les warnings DRC CFGBVS a la generation du bitstream)
+set_property CFGBVS VCCO        [current_design]
+set_property CONFIG_VOLTAGE 3.3 [current_design]
 
 ## Horloge 100 MHz
 set_property -dict { PACKAGE_PIN E3  IOSTANDARD LVCMOS33 } [get_ports clk_100mhz]
 create_clock -add -name sys_clk_pin -period 10.00 -waveform {0 5} [get_ports clk_100mhz]
 
 ## Boutons
+## CPU_RESET (bouton rouge, actif a '0')
 set_property -dict { PACKAGE_PIN C12 IOSTANDARD LVCMOS33 } [get_ports cpu_resetn]
+## BTNC (bouton central, actif a '1')
 set_property -dict { PACKAGE_PIN N17 IOSTANDARD LVCMOS33 } [get_ports btn_clear]
 
 ## Micro PDM
@@ -31,5 +39,5 @@ set_property -dict { PACKAGE_PIN D8  IOSTANDARD LVCMOS33 } [get_ports {vga_B[3]}
 set_property -dict { PACKAGE_PIN B11 IOSTANDARD LVCMOS33 } [get_ports vga_hsync]
 set_property -dict { PACKAGE_PIN B12 IOSTANDARD LVCMOS33 } [get_ports vga_vsync]
 
-## Les boutons et data_pdm sont asynchrones (synchronises dans le design)
+## Entrees asynchrones (synchronisees dans le design par 2 bascules)
 set_false_path -from [get_ports {cpu_resetn btn_clear data_pdm}]
