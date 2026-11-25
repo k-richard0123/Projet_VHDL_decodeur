@@ -5,7 +5,7 @@
 --    sur l'horloge 100 MHz : tout le design reste dans un seul domaine d'horloge
 --  * Image 320x240 doublee en 640x480 : x = h_cnt/2, y = v_cnt/2
 --      rd_addr = y*320 + x = (y<<8) + (y<<6) + x
---  * Niveau de gris 8 bits -> 4 bits de poids fort sur R, G et B
+--  * Pixel VRAM 12 bits RGB 4:4:4 : R = 11..8, G = 7..4, B = 3..0
 --  * HSYNC et VSYNC actifs a '0' (polarite standard du 640x480@60)
 --
 --  Chronogramme (en cycles clk 100 MHz) :
@@ -25,7 +25,7 @@ entity vga_controller is
 
            -- Vers / depuis la VRAM (port B)
            rd_addr   : out std_logic_vector(16 downto 0);
-           pixel_out : in  std_logic_vector(7 downto 0);
+           pixel_out : in  std_logic_vector(11 downto 0);   -- RGB 4:4:4
 
            -- Vers le connecteur VGA
            HSYNC     : out std_logic;
@@ -84,7 +84,7 @@ begin
     -- Compteurs h/v et sorties (couleurs + synchros), mis a jour a pix_en
     ----------------------------------------------------------------------------
     p_vga : process(clk)
-        variable gris : std_logic_vector(3 downto 0);
+        variable rgb : std_logic_vector(11 downto 0);
     begin
         if rising_edge(clk) then
             if rst = '1' then
@@ -98,15 +98,15 @@ begin
 
             elsif pix_en = '1' then
 
-                -- Couleurs : 4 bits de poids fort, noir hors zone visible (blanking)
+                -- Couleurs : noir hors zone visible (blanking)
                 if video_on = '1' then
-                    gris := pixel_out(7 downto 4);
+                    rgb := pixel_out;
                 else
-                    gris := (others => '0');
+                    rgb := (others => '0');
                 end if;
-                VGA_R <= gris;
-                VGA_G <= gris;
-                VGA_B <= gris;
+                VGA_R <= rgb(11 downto 8);
+                VGA_G <= rgb(7 downto 4);
+                VGA_B <= rgb(3 downto 0);
 
                 -- Synchros (actives a '0'), pour le pixel courant (h_cnt, v_cnt)
                 if (h_cnt >= H_VISIBLE + H_FP) and (h_cnt < H_VISIBLE + H_FP + H_SYNC) then

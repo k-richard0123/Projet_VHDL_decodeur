@@ -1,201 +1,216 @@
+--------------------------------------------------------------------------------
+-- Etage 2c : decodage de la CHROMINANCE d'une ligne Robot 36 (couleur)
+--
+-- Ligne Robot 36 (150 ms) :
+--   synchro 1200 Hz 9 ms | palier 1500 Hz 3 ms | Y : 320 px x 275 us (88 ms)
+--   | SEPARATEUR 4,5 ms | PALIER 1900 Hz 1,5 ms | CHROMA : 320 px x 137,5 us (44 ms)
+--
+--   Le separateur dit QUELLE chroma suit :
+--     1500 Hz (T ~ 667 us) -> ligne paire  -> R-Y (Cr)
+--     2300 Hz (T ~ 435 us) -> ligne impaire-> B-Y (Cb)
+--   Une ligne ne transporte donc qu'UNE des deux chromas : l'autre est reprise
+--   de la ligne precedente (memorisee dans un buffer de ligne).
+--
+-- Ce bloc demarre quand "luminance" signale la fin du balayage Y (lum_end).
+-- Il n'utilise PAS sync_1200 : la ligne est deja calee par luminance.
+--
+-- Memoires internes (320 x 8 bits chacune) :
+--   buf_Y  : ecrit par luminance pendant SCAN_Y (lum_we, lum_x, lum_data)
+--   buf_Cr : derniere ligne Cr recue
+--   buf_Cb : derniere ligne Cb recue
+--
+-- A la fin de chaque pixel chroma x : sortie (Y, Cr, Cb, x) + impulsion pix_val.
+-- Apres le dernier pixel (ou si une synchro coupe la ligne) : line_end.
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity chrominance is
     generic (
-        fclk : integer := 100 -- Fréquence de l'horloge système en MHz
+        CLK_MHZ   : integer := 100;    -- frequence d'horloge en MHz
+        RETARD_US : integer := 0       -- decalage fin de la chroma (reglage couleur / gris)
     );
-    Port ( 
+    port (
         clk      : in  std_logic;
-        raz      : in  std_logic;
-        
-       
-        addr     : in  std_logic_vector(9 downto 0);  -- Période signal en µs 
-        
-     
-        sync_1200: in  std_logic; -- '1' si le Zero-Crossing détecte ~1200 Hz
-        
-        -- Sorties stockées (les 3 valeurs pour le pixel en cours)
-        Y   : out std_logic_vector(7 downto 0); -- Luminance
-        Cr   : out std_logic_vector(7 downto 0); -- Rouge (R-Y)
-        Cb   : out std_logic_vector(7 downto 0); -- Bleu (B-Y)
-        
-        -- Signal de validation : '1' pendant 1 cycle quand les 3 valeurs Y,Cr,Cb sont prêtes
-        pixel_valid : out std_logic 
+        raz      : in  std_logic;                        -- reset synchrone, actif a '1'
+        sync_val : in  std_logic;                        -- nouvelle synchro : on abandonne la ligne
+        T        : in  std_logic_vector(11 downto 0);    -- periode en us (perio_metre)
+
+        -- cote luminance
+        lum_we   : in  std_logic;                        -- pixel Y pret
+        lum_x    : in  std_logic_vector(8 downto 0);
+        lum_data : in  std_logic_vector(7 downto 0);
+        lum_end  : in  std_logic;                        -- fin du balayage Y
+
+        -- pixel couleur complet
+        Y        : out std_logic_vector(7 downto 0);
+        Cr       : out std_logic_vector(7 downto 0);
+        Cb       : out std_logic_vector(7 downto 0);
+        x_out    : out std_logic_vector(8 downto 0);
+        pix_val  : out std_logic;                        -- '1' 1 cycle : Y,Cr,Cb,x valides
+        line_end : out std_logic;                        -- '1' 1 cycle : fin de la ligne couleur
+        paire    : out std_logic                         -- debug : '1' si ligne Cr
     );
-end chrominance;
+end entity chrominance;
 
-architecture Behavioral of chrominance is
+architecture rtl of chrominance is
 
+    constant SEP_CYC   : integer := 4500 * CLK_MHZ;                  -- 450 000
+    constant PAL_CYC   : integer := (1500 + RETARD_US) * CLK_MHZ;    -- 150 000
+    constant PIX_CYC   : integer := 1375 * CLK_MHZ / 10;             -- 13 750 (137,5 us)
+    constant NB_PIX    : integer := 320;
 
-    --  Définition des états de la fsm
-    type state_type is (att_sync, palier_sync, scan_y, sep, palier_chrom, scan_c);
-    signal state : state_type := att_sync;
+    -- fenetre de vote au milieu du separateur (1 ms .. 3,5 ms)
+    constant VOTE_DEB  : integer := 1000 * CLK_MHZ;
+    constant VOTE_FIN  : integer := 3500 * CLK_MHZ;
+    constant SEUIL_T   : integer := 550;    -- us : > 550 -> 1500 Hz, < 550 -> 2300 Hz
 
+    type etat_t is (ATTENTE, SEP, PALIER, SCAN_C);
+    signal etat   : etat_t := ATTENTE;
+    signal timer  : integer range 0 to SEP_CYC := 0;
+    signal x      : integer range 0 to 319 := 0;
+    signal vote   : integer range -VOTE_FIN to VOTE_FIN := 0;   -- >0 : Cr, <0 : Cb
+    signal est_cr : std_logic := '1';
 
-    signal timer_cnt : integer range 0 to 10000000 := 0; -- Compteur de temps général
-    signal pixel_idx : integer range 0 to 320 := 0;      -- Compteur de pixels (0 à 319)
-    signal ligne_paire : boolean := true;               -- Mémoire de la parité de la ligne
+    -- ROM periode -> niveau (meme loi que la luminance : 1500 Hz=0, 2300 Hz=255)
+    signal niveau : std_logic_vector(7 downto 0);
 
-
-    signal reg_Y  : std_logic_vector(7 downto 0) := (others => '0');
-    signal reg_Cr : std_logic_vector(7 downto 0) := (others => '0');
-    signal reg_Cb : std_logic_vector(7 downto 0) := (others => '0');
-
-    --ROM de gris
-    type rom_type is array (434 to 666) of integer range 0 to 255;
-    constant ROM_DATA : rom_type := (
-        255, 253, 253, 251, 251, 248, 248, 246, 246, 244, 244, 242, 242, 240, 240, 237,
-        237, 235, 235, 233, 233, 231, 231, 229, 229, 226, 226, 224, 224, 222, 222, 220,
-        220, 218, 218, 215, 215, 213, 213, 211, 211, 209, 209, 207, 207, 204, 204, 202,
-        202, 200, 200, 198, 198, 196, 196, 193, 193, 191, 191, 189, 189, 187, 187, 185,
-        185, 182, 182, 180, 180, 178, 178, 176, 176, 174, 174, 171, 171, 169, 169, 167,
-        167, 165, 165, 163, 163, 160, 160, 158, 158, 156, 156, 154, 154, 152, 152, 149,
-        149, 147, 147, 145, 145, 143, 143, 141, 141, 138, 138, 136, 136, 134, 134, 132,
-        132, 130, 130, 128, 128, 125, 125, 123, 123, 121, 121, 119, 119, 117, 117, 114,
-        114, 112, 112, 110, 110, 108, 108, 106, 106, 103, 103, 101, 101,  99,  99,  97,
-         97,  95,  95,  92,  92,  90,  90,  88,  88,  86,  86,  84,  84,  81,  81,  79,
-         79,  77,  77,  75,  75,  73,  73,  70,  70,  68,  68,  66,  66,  64,  64,  62,
-         62,  59,  59,  57,  57,  55,  55,  53,  53,  51,  51,  48,  48,  46,  46,  44,
-         44,  42,  42,  40,  40,  37,  37,  35,  35,  33,  33,  31,  31,  29,  29,  26,
-         26,  24,  24,  22,  22,  20,  20,  18,  18,  15,  15,  13,  13,  11,  11,   9,
-          9,   7,   7,   4,   4,   2,   2,   0,   0
-    );
-    signal niv_gris : std_logic_vector(7 downto 0);
+    -- buffers de ligne (init 128 = chroma neutre -> gris tant qu'on n'a rien recu)
+    type ligne_t is array (0 to 319) of std_logic_vector(7 downto 0);
+    signal buf_Y  : ligne_t := (others => x"80");
+    signal buf_Cr : ligne_t := (others => x"80");
+    signal buf_Cb : ligne_t := (others => x"80");
+    signal rd_Y, rd_Cr, rd_Cb : std_logic_vector(7 downto 0) := x"80";
 
 begin
 
+    u_rom : entity work.rom_periode_gris
+        port map ( clk => clk, addr => T, data_out => niveau );
 
-    Y  <= reg_Y;
-    Cr <= reg_Cr;
-    Cb <= reg_Cb;
+    paire <= est_cr;
 
-    -- Extraction du niveau de gris en continu à partir de la Période (addr)
-    process(clk)
-        variable p_idx : unsigned(9 downto 0);
+    ----------------------------------------------------------------------------
+    -- Buffer Y : ecrit par luminance, lu a l'adresse x du balayage chroma
+    ----------------------------------------------------------------------------
+    p_buf_y : process(clk)
     begin
         if rising_edge(clk) then
-            p_idx := unsigned(addr);
-            if p_idx < 434 then 
-                niv_gris <= std_logic_vector(to_unsigned(255, 8)); 
-            elsif p_idx > 666 then
-                niv_gris <= std_logic_vector(to_unsigned(0, 8));   
+            if lum_we = '1' and unsigned(lum_x) < NB_PIX then
+                buf_Y(to_integer(unsigned(lum_x))) <= lum_data;
+            end if;
+            rd_Y <= buf_Y(x);
+        end if;
+    end process;
+
+    ----------------------------------------------------------------------------
+    -- Buffers Cr / Cb : lecture permanente a l'adresse x (x reste stable
+    -- 13 750 cycles, la valeur lue est donc prete bien avant la fin du pixel)
+    ----------------------------------------------------------------------------
+    p_buf_c : process(clk)
+    begin
+        if rising_edge(clk) then
+            if etat = SCAN_C and timer >= PIX_CYC - 1 then
+                if est_cr = '1' then
+                    buf_Cr(x) <= niveau;
+                else
+                    buf_Cb(x) <= niveau;
+                end if;
+            end if;
+            rd_Cr <= buf_Cr(x);
+            rd_Cb <= buf_Cb(x);
+        end if;
+    end process;
+
+    ----------------------------------------------------------------------------
+    -- Machine a etats de la seconde moitie de ligne
+    ----------------------------------------------------------------------------
+    p_fsm : process(clk)
+    begin
+        if rising_edge(clk) then
+            pix_val  <= '0';
+            line_end <= '0';
+
+            if raz = '1' then
+                etat  <= ATTENTE;
+                timer <= 0;
+                x     <= 0;
+                vote  <= 0;
+
+            elsif sync_val = '1' then
+                -- nouvelle ligne : si on etait en cours, on clot quand meme la
+                -- ligne pour que le numero de ligne continue d'avancer
+                if etat /= ATTENTE then
+                    line_end <= '1';
+                end if;
+                etat  <= ATTENTE;
+                timer <= 0;
+                x     <= 0;
+
+            elsif lum_end = '1' then           -- fin de Y : debut du separateur
+                etat  <= SEP;
+                timer <= 0;
+                vote  <= 0;
+                x     <= 0;
+
             else
-                niv_gris <= std_logic_vector(to_unsigned(ROM_DATA(to_integer(p_idx)), 8));
+                case etat is
+                    when ATTENTE =>
+                        null;
+
+                    -- separateur 4,5 ms : vote sur la frequence (1500 ou 2300 Hz)
+                    when SEP =>
+                        if timer >= VOTE_DEB and timer < VOTE_FIN then
+                            if unsigned(T) > SEUIL_T then
+                                vote <= vote + 1;
+                            else
+                                vote <= vote - 1;
+                            end if;
+                        end if;
+                        if timer = SEP_CYC - 1 then
+                            if vote > 0 then est_cr <= '1'; else est_cr <= '0'; end if;
+                            etat  <= PALIER;
+                            timer <= 0;
+                        else
+                            timer <= timer + 1;
+                        end if;
+
+                    -- palier neutre 1900 Hz, 1,5 ms
+                    when PALIER =>
+                        if timer = PAL_CYC - 1 then
+                            etat  <= SCAN_C;
+                            timer <= 0;
+                            x     <= 0;
+                        else
+                            timer <= timer + 1;
+                        end if;
+
+                    -- 320 pixels chroma de 137,5 us
+                    when SCAN_C =>
+                        if timer >= PIX_CYC - 1 then
+                            timer <= 0;
+                            Y     <= rd_Y;
+                            if est_cr = '1' then
+                                Cr <= niveau;   -- chroma de cette ligne
+                                Cb <= rd_Cb;    -- chroma de la ligne precedente
+                            else
+                                Cr <= rd_Cr;
+                                Cb <= niveau;
+                            end if;
+                            x_out   <= std_logic_vector(to_unsigned(x, 9));
+                            pix_val <= '1';
+                            if x >= NB_PIX - 1 then
+                                line_end <= '1';
+                                etat     <= ATTENTE;
+                            else
+                                x <= x + 1;
+                            end if;
+                        else
+                            timer <= timer + 1;
+                        end if;
+                end case;
             end if;
         end if;
     end process;
 
-
-    -- fsm de décodage
-    process(clk, raz)
-        variable p_idx_sep : unsigned(9 downto 0);
-    begin
-        if raz = '1' then
-            state <= att_sync;
-            timer_cnt <= 0;
-            pixel_idx <= 0;
-            pixel_valid <= '0';
-            ligne_paire <= true;
-            
-        elsif rising_edge(clk) then
-            pixel_valid <= '0'; -- Impulsion d'un cycle par défaut
-            
-            case state is
-            
-                --Attente du top de départ (1200 Hz pendant ~9 ms)
-                when att_sync =>
-                    if sync_1200 = '1' then
-                        timer_cnt <= timer_cnt + 1;
-                        -- On valide si on a eu au moins 5 ms de 1200 Hz
-                        if timer_cnt >= (5000 * fclk) then
-                            state <= palier_sync;
-                            timer_cnt <= 0;
-                        end if;
-                    else
-                        timer_cnt <= 0;
-                    end if;
-
-                --Palier noir de stabilisation (1500 Hz pendant 3 ms)
-                when palier_sync =>
-                    timer_cnt <= timer_cnt + 1;
-                    if timer_cnt >= 3000   * fclk then
-                        state <= scan_y;
-                        timer_cnt <= 0;
-                        pixel_idx <= 0;
-                    end if;
-
-                -- balayage de la luminance Y (320 pixels, 275 us chacun)
-                when scan_y =>
-                    timer_cnt <= timer_cnt + 1;
-                    if timer_cnt >= 275    * fclk then
-                        timer_cnt <= 0;
-                        
-                        -- On échantillonne le niveau de gris actuel pour Y
-                        reg_Y <= niv_gris;
-                        
-                        pixel_idx <= pixel_idx + 1;
-                        if pixel_idx = 319 then
-                            state <= sep;
-                            timer_cnt <= 0;
-                        end if;
-                    end if;
-
-                -- Impulsion de séparation (4.5 ms) pour deviner Cr ou Cb
-                when sep =>
-                    timer_cnt <= timer_cnt + 1;
-                    
-                    -- On échantillonne la fréquence au milieu du séparateur (vers 2 ms)
-                    if timer_cnt = (2000 * fclk) then
-                        p_idx_sep := unsigned(addr);
-                        -- Si la période est > 600 us (~1500 Hz Noir), c'est une ligne Paire (Rouge)
-                        if p_idx_sep > 600 then
-                            ligne_paire <= true;
-                        else
-                            ligne_paire <= false;
-                        end if;
-                    end if;
-                    
-                    if( timer_cnt >= 4500*fclk) then
-                        state <= palier_chrom;
-                        timer_cnt <= 0;
-                    end if;
-
-                --palier neutre de chrominance (1900 Hz pendant 1.5 ms)
-                when palier_chrom =>
-                    timer_cnt <= timer_cnt + 1;
-                    if (timer_cnt >= 1500   * fclk) then
-                        state <= scan_c;
-                        timer_cnt <= 0;
-                        pixel_idx <= 0;
-                    end if;
-
-                -- Balayage de la chrominance (320 pixels, 137 us chacun)
-                when scan_c =>
-                    timer_cnt <= timer_cnt + 1;
-                    if timer_cnt >= 137    * fclk then
-                        timer_cnt <= 0;
-                        
-                        -- On affecte la couleur lue au bon registre selon la parité de la ligne
-                        if ligne_paire then
-                            reg_Cr <= niv_gris;
-                        else
-                            reg_Cb <= niv_gris;
-                        end if;
-                        
-                        -- Le pixel complet (Y + Cr + Cb) est prêt à être écrit en mémoire vram
-                        pixel_valid <= '1';
-                        
-                        pixel_idx <= pixel_idx + 1;
-                        if pixel_idx =319 then
-                            state <= att_sync; -- Fin de ligne, on attend la synchro suivante
-                            timer_cnt <= 0;
-                        end if;
-                    end if;
-
-            end case;
-        end if;
-    end process;
-
-end architecture Behavioral;
+end architecture rtl;

@@ -11,7 +11,7 @@ entity vga_display is
 
            -- Cote Etage 2
            wr_addr      : in  std_logic_vector(16 downto 0);
-           vram_data_in : in  std_logic_vector(7 downto 0);
+           vram_data_in : in  std_logic_vector(11 downto 0);    -- RGB 4:4:4
            wr_en        : in  std_logic;
            clear        : in  std_logic;                        -- impulsion 1 cycle : nouvelle image
 
@@ -27,7 +27,7 @@ end vga_display;
 architecture Structural of vga_display is
 
     signal rd_addr   : std_logic_vector(16 downto 0);
-    signal pixel_out : std_logic_vector(7 downto 0);
+    signal pixel_out : std_logic_vector(11 downto 0);
 
 begin
 

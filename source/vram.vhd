@@ -1,5 +1,6 @@
 --------------------------------------------------------------------------------
--- VRAM 320x240 pixels, 8 bits (niveau de gris)
+-- VRAM 320x240 pixels, 12 bits RGB 4:4:4  (R = 11..8, G = 7..4, B = 3..0)
+--   en mode gris on ecrit simplement le meme nibble sur R, G et B
 --
 --  (ecriture port A, lecture port B)
 --  init ecran BLANC (255) a la programmation du FPGA, et "clear" remet tout en blanc
@@ -15,20 +16,20 @@ entity vram is
 
           --coté FSM
            wr_addr      : in  std_logic_vector(16 downto 0);
-           vram_data_in : in  std_logic_vector(7 downto 0);
+           vram_data_in : in  std_logic_vector(11 downto 0);
            wr_en        : in  std_logic;
            clear        : in  std_logic;
 
            --cote controleur VGA
            rd_addr      : in  std_logic_vector(16 downto 0);
-           pixel_out    : out std_logic_vector(7 downto 0)
+           pixel_out    : out std_logic_vector(11 downto 0)
          );
 end vram;
 
 architecture Behavioral of vram is
 
     constant NB_PIXELS : integer := 320 * 240;  --lignes fois colonens
-    type ram_t is array (0 to NB_PIXELS - 1) of std_logic_vector(7 downto 0);
+    type ram_t is array (0 to NB_PIXELS - 1) of std_logic_vector(11 downto 0);
     signal ram : ram_t := (others => (others => '1'));        -- init = blanc (0 c'est noir et 255 c'est blanc)
     attribute ram_style : string;
     attribute ram_style of ram : signal is "block";
@@ -36,7 +37,7 @@ architecture Behavioral of vram is
     signal clr_cnt    : unsigned(16 downto 0) := (others => '0');
     signal we_int   : std_logic;
     signal addr_int : unsigned(16 downto 0);
-    signal data_int : std_logic_vector(7 downto 0);
+    signal data_int : std_logic_vector(11 downto 0);
 
 begin
 

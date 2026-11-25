@@ -47,6 +47,7 @@ set_property -dict { PACKAGE_PIN M13 IOSTANDARD LVCMOS33 } [get_ports sw_front]
 set_property -dict { PACKAGE_PIN V10 IOSTANDARD LVCMOS33 } [get_ports sw_libre]
 ## SW14 : choix du mode (bas = Robot 8, haut = Robot 36)
 set_property -dict { PACKAGE_PIN U11 IOSTANDARD LVCMOS33 } [get_ports sw_mode]
+set_property -dict { PACKAGE_PIN U12 IOSTANDARD LVCMOS33 } [get_ports sw_couleur]   ;# SW13 : couleur
 
 ## LED0 .. LED15
 set_property -dict { PACKAGE_PIN H17 IOSTANDARD LVCMOS33 } [get_ports {led[0]}]
@@ -84,4 +85,4 @@ set_property -dict { PACKAGE_PIN K2  IOSTANDARD LVCMOS33 } [get_ports {an[6]}]
 set_property -dict { PACKAGE_PIN U13 IOSTANDARD LVCMOS33 } [get_ports {an[7]}]
 
 ## Entrees asynchrones (synchronisees dans le design par 2 bascules)
-set_false_path -from [get_ports {cpu_resetn btn_clear data_pdm sw_hyst[*] sw_front sw_libre sw_mode}]
+set_false_path -from [get_ports {cpu_resetn btn_clear data_pdm sw_hyst[*] sw_front sw_libre sw_mode sw_couleur}]
