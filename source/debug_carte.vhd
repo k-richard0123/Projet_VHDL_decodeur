@@ -8,7 +8,8 @@
 --  LED4      : des pixels sont ecrits en VRAM
 --  LED8..15  : vu-metre du micro (crete de |pcm| sur 50 ms)
 --              LED8 >= 128, LED9 >= 256, ... LED15 >= 16384
---              (le seuil d'hysteresis par defaut, 512, correspond a LED10)
+--              (le seuil d'hysteresis par defaut, 128, correspond a LED8 :
+--               il faut au moins LED9-LED10 allumees pour un decodage fiable)
 --
 --  7 segments, 4 chiffres de droite : periode T mesuree en us (rafraichie 4x/s)
 --              1200 Hz -> 833   1500 Hz -> 666   1900 Hz -> 526   2300 Hz -> 434

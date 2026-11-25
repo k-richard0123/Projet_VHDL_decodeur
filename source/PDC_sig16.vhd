@@ -11,8 +11,9 @@
 --    garde une bonne precision temporelle pour le periodemetre (1 us).
 --      somme1 = nb de '1' sur les 64 derniers bits          : 0 .. 64
 --      somme2 = somme des 64 dernieres valeurs de somme1    : 0 .. 4096
---      pcm    = (somme2 - 2048) * 8                         : -16384 .. +16384
---    Silence (50 % de '1') -> pcm = 0 : le signal est CENTRE SUR 0.
+--      brut   = (somme2 - 2048) * 8                         : -16384 .. +16384
+--      pcm    = brut - moyenne(brut)   (suppression du continu, passe-haut ~90 Hz)
+--    Le signal sorti est donc toujours CENTRE SUR 0, meme si le micro a un decalage.
 --------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
@@ -30,7 +31,7 @@ entity PDC_sig16 is
                                                          -- '1' : lecture juste avant le front DESCENDANT (debug)
         clk_mic    : out std_logic;                      -- horloge vers le micro
         lr_sel     : out std_logic;                      -- selection canal (gauche)
-        pcm_data   : out std_logic_vector(15 downto 0);  -- echantillon PCM SIGNE (complement a 2)
+        pcm_data   : out std_logic_vector(15 downto 0) := (others => '0');  -- echantillon PCM SIGNE (complement a 2)
         sample_val : out std_logic                       -- '1' pendant 1 cycle 100 MHz a chaque nouvel echantillon
     );
 end PDC_sig16;
@@ -53,6 +54,7 @@ architecture Behavioral of PDC_sig16 is
     signal sr2    : sr2_t := (others => 0);
     signal somme1 : integer range 0 to N_FILTRE := 0;
     signal somme2 : integer range 0 to N_FILTRE * N_FILTRE := 0;
+    signal acc_dc : signed(31 downto 0) := (others => '0');   -- 4096 x moyenne du signal
 
 begin
 
@@ -63,6 +65,9 @@ begin
         variable bit_in  : integer range 0 to 1;
         variable bit_old : integer range 0 to 1;
         variable s1_new  : integer range 0 to N_FILTRE;
+        variable brut    : signed(31 downto 0);
+        variable moy     : signed(31 downto 0);
+        variable sortie  : signed(31 downto 0);
     begin
         if rising_edge(clk_100mhz) then
             pdm_s1 <= data_pdm;
@@ -91,15 +96,29 @@ begin
                     sr2(0) <= s1_new;
                     somme2 <= somme2 + s1_new - sr2(N_FILTRE - 1);
 
+                    -- Suppression de la composante continue (passe-haut ~90 Hz).
+                    -- Le micro n'est jamais parfaitement a 50 % de '1' au repos : ce
+                    -- decalage, s'il depasse le seuil d'hysteresis, empeche le
+                    -- periodemetre de voir les passages par zero d'un son faible.
+                    --   moyenne = acc_dc / 4096 ; sortie = brut - moyenne
+                    -- (calcule avec somme2 du bit precedent : 1 bit de retard, sans importance)
+                    brut   := to_signed((somme2 - MILIEU) * 8, 32);
+                    moy    := shift_right(acc_dc, 12);
+                    acc_dc <= acc_dc + brut - moy;
+                    sortie := brut - moy;
+                    if sortie > 32767 then
+                        pcm_data <= std_logic_vector(to_signed(32767, 16));
+                    elsif sortie < -32768 then
+                        pcm_data <= std_logic_vector(to_signed(-32768, 16));
+                    else
+                        pcm_data <= std_logic_vector(sortie(15 downto 0));
+                    end if;
+
                     sample_val <= '1';
                 end if;
             else
                 compteur_div <= compteur_div + 1;
             end if;
-
-            -- sortie centree sur 0 (calculee avec la somme2 du bit precedent :
-            -- 1 bit micro de retard, sans importance)
-            pcm_data <= std_logic_vector(shift_left(to_signed(somme2 - MILIEU, 16), 3));
         end if;
     end process;
 

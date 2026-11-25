@@ -40,11 +40,13 @@ set_property -dict { PACKAGE_PIN B11 IOSTANDARD LVCMOS33 } [get_ports vga_hsync]
 set_property -dict { PACKAGE_PIN B12 IOSTANDARD LVCMOS33 } [get_ports vga_vsync]
 
 ## ---------------------------------------------------------------- Debug
-## Interrupteurs : SW0, SW1 (hysteresis), SW2 (front micro), SW15 (mode libre)
+## Interrupteurs : SW0, SW1 (hysteresis), SW2 (front micro), SW14 (mode SSTV), SW15 (mode libre)
 set_property -dict { PACKAGE_PIN J15 IOSTANDARD LVCMOS33 } [get_ports {sw_hyst[0]}]
 set_property -dict { PACKAGE_PIN L16 IOSTANDARD LVCMOS33 } [get_ports {sw_hyst[1]}]
 set_property -dict { PACKAGE_PIN M13 IOSTANDARD LVCMOS33 } [get_ports sw_front]
 set_property -dict { PACKAGE_PIN V10 IOSTANDARD LVCMOS33 } [get_ports sw_libre]
+## SW14 : choix du mode (bas = Robot 8, haut = Robot 36)
+set_property -dict { PACKAGE_PIN U11 IOSTANDARD LVCMOS33 } [get_ports sw_mode]
 
 ## LED0 .. LED15
 set_property -dict { PACKAGE_PIN H17 IOSTANDARD LVCMOS33 } [get_ports {led[0]}]
@@ -82,4 +84,4 @@ set_property -dict { PACKAGE_PIN K2  IOSTANDARD LVCMOS33 } [get_ports {an[6]}]
 set_property -dict { PACKAGE_PIN U13 IOSTANDARD LVCMOS33 } [get_ports {an[7]}]
 
 ## Entrees asynchrones (synchronisees dans le design par 2 bascules)
-set_false_path -from [get_ports {cpu_resetn btn_clear data_pdm sw_hyst[*] sw_front sw_libre}]
+set_false_path -from [get_ports {cpu_resetn btn_clear data_pdm sw_hyst[*] sw_front sw_libre sw_mode}]

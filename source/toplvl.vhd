@@ -1,5 +1,7 @@
 --------------------------------------------------------------------------------
--- TOP : decodeur SSTV Robot 36 -> image 320x240 en NIVEAUX DE GRIS sur VGA
+-- TOP : decodeur SSTV -> image en NIVEAUX DE GRIS sur VGA
+--   SW14 en bas  : Robot 8  (160 x 120, chaque pixel affiche en 2 x 2)
+--   SW14 en haut : Robot 36 (320 x 240, luminance seule)
 --
 --   micro PDM -> PDC_sig16 -> perio_metre -> detec_sync -+-> luminance -> VRAM -> VGA
 --                                        \______________/
@@ -32,9 +34,10 @@ entity top_sstv is
         vga_B      : out std_logic_vector(3 downto 0);
 
         -- Debug (voir debug_carte.vhd)
-        sw_hyst    : in  std_logic_vector(1 downto 0);  -- SW1..0 : seuil d'hysteresis 00:512 01:256 10:128 11:1024
+        sw_hyst    : in  std_logic_vector(1 downto 0);  -- SW1..0 : seuil d'hysteresis 00:128 01:64 10:256 11:512
         sw_front   : in  std_logic;                     -- SW2  : front de lecture du micro (0 = normal)
-        sw_libre   : in  std_logic;                     -- SW15 : mode libre (ignore la synchro, une ligne / 150 ms)
+        sw_libre   : in  std_logic;                     -- SW15 : mode libre (ignore la synchro, une ligne a la cadence du mode)
+        sw_mode    : in  std_logic;                     -- SW14 : '0' Robot 8, '1' Robot 36
         led        : out std_logic_vector(15 downto 0);
         seg        : out std_logic_vector(6 downto 0);
         an         : out std_logic_vector(7 downto 0)
@@ -59,17 +62,26 @@ architecture Structural of top_sstv is
     signal pcm_audio  : std_logic_vector(15 downto 0);
     signal periode_us : std_logic_vector(11 downto 0);
     signal sync_valid : std_logic;
+    signal sync_image : std_logic;                       -- en-tete VIS : debut d'une nouvelle image
+    signal mode_r8    : std_logic;
 
     signal pixel_gris : std_logic_vector(7 downto 0);
     signal pixel_x    : std_logic_vector(8 downto 0);
     signal pixel_we   : std_logic;
     signal line_end   : std_logic;
 
-    signal y_coord    : unsigned(7 downto 0) := (others => '0');  -- 0 a 239
+    signal y_coord    : unsigned(7 downto 0) := (others => '0');  -- ligne : 0..239 (R36) ou 0..119 (R8)
     signal vram_waddr : std_logic_vector(16 downto 0);
+    signal vram_we    : std_logic := '0';
+    signal vram_data  : std_logic_vector(7 downto 0) := (others => '0');
+
+    -- ecriture 2 x 2 du Robot 8
+    signal base_addr  : unsigned(16 downto 0) := (others => '0');
+    signal ecr_cnt    : integer range 0 to 3 := 0;
+    signal ecr_actif  : std_logic := '0';
 
     -- debug
-    signal sw_s1, sw_s2  : std_logic_vector(3 downto 0) := (others => '0');  -- interrupteurs synchronises
+    signal sw_s1, sw_s2  : std_logic_vector(4 downto 0) := (others => '0');  -- interrupteurs synchronises
     signal hyst          : std_logic_vector(14 downto 0);
     signal sync_1200     : std_logic;
     signal sync_ligne    : std_logic;                       -- synchro donnee a luminance
@@ -100,24 +112,26 @@ begin
     p_sw : process(clk_100mhz)
     begin
         if rising_edge(clk_100mhz) then
-            sw_s1 <= sw_libre & sw_front & sw_hyst;
+            sw_s1 <= sw_mode & sw_libre & sw_front & sw_hyst;
             sw_s2 <= sw_s1;
         end if;
     end process;
 
     with sw_s2(1 downto 0) select hyst <=
-        std_logic_vector(to_unsigned(512, 15))  when "00",
-        std_logic_vector(to_unsigned(256, 15))  when "01",
-        std_logic_vector(to_unsigned(128, 15))  when "10",
-        std_logic_vector(to_unsigned(1024, 15)) when others;
+        std_logic_vector(to_unsigned(128, 15)) when "00",     -- defaut
+        std_logic_vector(to_unsigned(64, 15))  when "01",     -- son tres faible
+        std_logic_vector(to_unsigned(256, 15)) when "10",
+        std_logic_vector(to_unsigned(512, 15)) when others;   -- son fort et bruite
 
-    -- Mode libre : une fausse synchro toutes les 150 ms (duree d'une ligne).
+    mode_r8 <= not sw_s2(4);
+
+    -- Mode libre : une fausse synchro par duree de ligne (66,7 ms en Robot 8, 150 ms en Robot 36).
     -- Permet de voir si le son est transforme en gris meme sans synchro detectee.
     p_libre : process(clk_100mhz)
     begin
         if rising_edge(clk_100mhz) then
             sync_libre <= '0';
-            if cpt_libre = 14999999 then
+            if (mode_r8 = '1' and cpt_libre >= 6666666) or cpt_libre = 14999999 then
                 cpt_libre  <= 0;
                 sync_libre <= '1';
             else
@@ -176,15 +190,17 @@ begin
             raz      => rst,
             tick_1us => tick_1us,
             T        => periode_us,
-            sync     => sync_1200,
-            sync_val => sync_valid      -- 1 cycle, a la fin de la synchro (+TROU_US)
+            sync       => sync_1200,
+            sync_val   => sync_valid,   -- 1 cycle, a la fin de la synchro (+TROU_US)
+            sync_image => sync_image
         );
 
     inst_lum : entity work.luminance
-        generic map ( CLK_MHZ => 100, PALIER_US => 3000 - TROU_US )
+        generic map ( CLK_MHZ => 100, TROU_US => TROU_US )
         port map (
             clk      => clk_100mhz,
             raz      => rst,
+            mode_r8  => mode_r8,
             sync_val => sync_ligne,     -- vraie synchro, ou fausse en mode libre
             T        => periode_us,     -- les 12 bits (avant : 10 bits -> repliement)
             data_out => pixel_gris,
@@ -194,15 +210,16 @@ begin
         );
 
     ----------------------------------------------------------------------------
-    -- Numero de ligne : avance a chaque fin de ligne, revient en haut apres 240
+    -- Numero de ligne : avance a chaque fin de ligne, revient en haut apres la
+    -- derniere ligne, et repart de 0 a chaque nouvelle image (en-tete VIS).
     ----------------------------------------------------------------------------
     p_ligne : process(clk_100mhz)
     begin
         if rising_edge(clk_100mhz) then
-            if rst = '1' or clear_pulse = '1' then
+            if rst = '1' or clear_pulse = '1' or sync_image = '1' then
                 y_coord <= (others => '0');
             elsif line_end = '1' then
-                if y_coord = 239 then
+                if (mode_r8 = '1' and y_coord >= 119) or y_coord = 239 then
                     y_coord <= (others => '0');
                 else
                     y_coord <= y_coord + 1;
@@ -211,12 +228,52 @@ begin
         end if;
     end process;
 
-    -- Adresse = y*320 + x = (y<<8) + (y<<6) + x
+    ----------------------------------------------------------------------------
+    -- Ecriture en VRAM (320 x 240, adresse = ligne*320 + colonne)
+    --   Robot 36 : 1 ecriture par pixel, en (x, y)
+    --   Robot 8  : 4 ecritures par pixel (2 x 2) en (2x, 2y), (2x+1, 2y),
+    --              (2x, 2y+1), (2x+1, 2y+1) -> l'image 160x120 remplit l'ecran
     -- (line_end arrive dans le meme cycle que le dernier pix_val : y n'a pas
-    --  encore change, le pixel 319 est donc bien ecrit sur la bonne ligne)
-    vram_waddr <= std_logic_vector(shift_left(resize(y_coord, 17), 8) +
-                                   shift_left(resize(y_coord, 17), 6) +
-                                   resize(unsigned(pixel_x), 17));
+    --  encore change, le dernier pixel est donc bien ecrit sur la bonne ligne)
+    ----------------------------------------------------------------------------
+    p_ecriture : process(clk_100mhz)
+        variable lig, col : unsigned(16 downto 0);
+        variable adr      : unsigned(16 downto 0);
+    begin
+        if rising_edge(clk_100mhz) then
+            vram_we <= '0';
+
+            if pixel_we = '1' then
+                if mode_r8 = '1' then
+                    lig := shift_left(resize(y_coord, 17), 1);          -- 2y
+                    col := shift_left(resize(unsigned(pixel_x), 17), 1); -- 2x
+                else
+                    lig := resize(y_coord, 17);
+                    col := resize(unsigned(pixel_x), 17);
+                end if;
+                adr := shift_left(lig, 8) + shift_left(lig, 6) + col;   -- lig*320 + col
+                vram_waddr <= std_logic_vector(adr);
+                vram_data  <= pixel_gris;
+                vram_we    <= '1';
+                base_addr  <= adr;
+                ecr_cnt    <= 1;
+                ecr_actif  <= mode_r8;            -- 3 ecritures de plus en Robot 8
+
+            elsif ecr_actif = '1' then
+                case ecr_cnt is
+                    when 1      => vram_waddr <= std_logic_vector(base_addr + 1);
+                    when 2      => vram_waddr <= std_logic_vector(base_addr + 320);
+                    when others => vram_waddr <= std_logic_vector(base_addr + 321);
+                end case;
+                vram_we <= '1';
+                if ecr_cnt = 3 then
+                    ecr_actif <= '0';
+                else
+                    ecr_cnt <= ecr_cnt + 1;
+                end if;
+            end if;
+        end if;
+    end process;
 
     ----------------------------------------------------------------------------
     -- VRAM + VGA
@@ -226,8 +283,8 @@ begin
             clk          => clk_100mhz,
             rst          => rst,
             wr_addr      => vram_waddr,
-            vram_data_in => pixel_gris,
-            wr_en        => pixel_we,
+            vram_data_in => vram_data,
+            wr_en        => vram_we,
             clear        => clear_pulse,   -- efface en blanc
             HSYNC        => vga_hsync,
             VSYNC        => vga_vsync,

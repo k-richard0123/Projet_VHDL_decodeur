@@ -4,12 +4,13 @@
 --   faux micro PDM -> PDC_sig16 -> perio_metre -> detec_sync -> luminance
 --
 -- Le faux micro emet une ligne Robot 36 dont la luminance est un DEGRADE :
--- pixel x -> gris attendu = x*255/319 (noir a gauche, blanc a droite).
+-- pixel x -> gris attendu = x*255/(NB_PIX-1) (noir a gauche, blanc a droite).
+-- Mode teste : ROBOT 8 (synchro 10 ms, 160 pixels de 350 us, ligne de 66,7 ms).
 -- Le signal audio sinusoidal est converti en PDM par un modulateur sigma-delta
 -- d'ordre 1, comme le fait le vrai micro.
 --
 -- A chaque pixel decode, on compare au gris attendu. A la fin de la ligne on
--- affiche l'erreur moyenne. Duree a simuler : ~165 ms  (run 170 ms dans Vivado ;
+-- affiche l'erreur moyenne. Duree a simuler : ~72 ms  (run 100 ms dans Vivado ;
 -- comptez quelques minutes).
 --------------------------------------------------------------------------------
 library ieee;
@@ -24,9 +25,10 @@ architecture sim of tb_chaine_gris is
 
     constant PERIODE_CLK : time := 10 ns;
     constant DEBUT_LIGNE : real := 0.005;      -- 5 ms de 1500 Hz avant la 1re synchro
-    constant AMPLITUDE   : real := 0.5;        -- amplitude du son (pleine echelle = 1)
+    constant AMPLITUDE   : real := 0.05;       -- amplitude du son (pleine echelle = 1) : son FAIBLE
+    constant DECALAGE    : real := 0.05;       -- composante continue du micro (doit etre supprimee)
     constant TROU_US     : integer := 500;
-    constant HYST_512    : std_logic_vector(14 downto 0) := std_logic_vector(to_unsigned(512, 15));
+    constant HYST_128    : std_logic_vector(14 downto 0) := std_logic_vector(to_unsigned(128, 15));
 
     signal clk        : std_logic := '0';
     signal rst        : std_logic := '1';
@@ -52,14 +54,12 @@ architecture sim of tb_chaine_gris is
             return 1500.0;                              -- avant la ligne
         end if;
         t := t_abs - DEBUT_LIGNE;
-        if    t < 0.009 then return 1200.0;             -- synchro
-        elsif t < 0.012 then return 1500.0;             -- palier
-        elsif t < 0.100 then                            -- Y : degrade
-            px := integer(floor((t - 0.012) / 275.0e-6));
-            if px > 319 then px := 319; end if;
-            return 1500.0 + 800.0 * real(px) / 319.0;
-        elsif t < 0.1045 then return 1500.0;            -- separateur
-        else  return 1900.0;                            -- palier + chroma neutre
+        if    t < 0.010 then return 1200.0;             -- synchro 10 ms
+        elsif t < 0.066 then                            -- Y : degrade, 160 x 350 us
+            px := integer(floor((t - 0.010) / 350.0e-6));
+            if px > 159 then px := 159; end if;
+            return 1500.0 + 800.0 * real(px) / 159.0;
+        else  return 1500.0;                            -- fin de ligne (66,7 ms)
         end if;
     end function;
 
@@ -90,7 +90,7 @@ begin
         t := real(now / 1 ns) * 1.0e-9;
         phase := phase + MATH_2_PI * freq(t) * (t - t_pr);
         t_pr  := t;
-        echant := AMPLITUDE * sin(phase);
+        echant := DECALAGE + AMPLITUDE * sin(phase);
         if v + echant > 0.0 then
             v := v + echant - 1.0;
             data_pdm <= '1' after 50 ns;
@@ -109,18 +109,19 @@ begin
                    pcm_data => pcm, sample_val => open );
 
     u_per : entity work.perio_metre
-        port map ( clk => clk, hyst => HYST_512,
+        port map ( clk => clk, hyst => HYST_128,
                    raz => rst, tick_1us => tick_1us,
                    sig_in => pcm, T => periode, T_val => open );
 
     u_sync : entity work.detec_sync
         generic map ( SYNC_MIN_US => 6000, TROU_US => TROU_US )
         port map ( clk => clk, raz => rst, tick_1us => tick_1us,
-                   T => periode, sync => open, sync_val => sync_val );
+                   T => periode, sync => open, sync_val => sync_val,
+                   sync_image => open );
 
     u_lum : entity work.luminance
-        generic map ( CLK_MHZ => 100, PALIER_US => 3000 - TROU_US )
-        port map ( clk => clk, raz => rst, sync_val => sync_val, T => periode,
+        generic map ( CLK_MHZ => 100, TROU_US => TROU_US )
+        port map ( clk => clk, raz => rst, mode_r8 => '1', sync_val => sync_val, T => periode,
                    data_out => gris, x_out => x, pix_val => pix_val,
                    line_end => line_end );
 
@@ -136,16 +137,16 @@ begin
         if rising_edge(clk) then
             if sync_val = '1' then
                 report "Fin de synchro detectee a " & time'image(now) &
-                       " (attendu ~" & real'image((DEBUT_LIGNE + 0.009) * 1000.0) &
+                       " (attendu ~" & real'image((DEBUT_LIGNE + 0.010) * 1000.0) &
                        " ms + ~0,7 ms de latence)";
             end if;
 
             if pix_val = '1' then
-                attendu := (to_integer(unsigned(x)) * 255 + 159) / 319;
+                attendu := (to_integer(unsigned(x)) * 255 + 79) / 159;
                 erreur  := abs(to_integer(unsigned(gris)) - attendu);
                 somme   := somme + erreur;
                 nb      := nb + 1;
-                if to_integer(unsigned(x)) mod 40 = 0 then
+                if to_integer(unsigned(x)) mod 20 = 0 then
                     report "pixel " & integer'image(to_integer(unsigned(x))) &
                            " : gris = " & integer'image(to_integer(unsigned(gris))) &
                            " (attendu " & integer'image(attendu) & ")";
@@ -156,7 +157,7 @@ begin
                 report "Fin de ligne : erreur moyenne = " &
                        integer'image(somme / nb) & " niveaux de gris sur " &
                        integer'image(nb) & " pixels";
-                assert nb = 320 report "Nombre de pixels incorrect" severity error;
+                assert nb = 160 report "Nombre de pixels incorrect" severity error;
                 assert somme / nb <= 10
                     report "Erreur moyenne trop grande" severity error;
                 report "Simulation terminee" severity failure;   -- arrete la simu
